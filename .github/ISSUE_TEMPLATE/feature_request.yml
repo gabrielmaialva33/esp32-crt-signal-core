@@ -1,0 +1,33 @@
+name: Feature Request
+description: Suggest an improvement or new capability
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or motivation
+      description: What limitation are you hitting?
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How should it work?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - crt_core (engine)
+        - crt_hal (hardware)
+        - crt_timing (profiles)
+        - crt_waveform (burst/chroma)
+        - crt_demo (patterns)
+        - crt_diag (telemetry)
+        - crt_fb (framebuffer)
+        - Other

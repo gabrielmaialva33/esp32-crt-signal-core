@@ -1,0 +1,48 @@
+name: Bug Report
+description: Report a signal, timing, or build issue
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What went wrong?
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps to trigger the issue
+
+  - type: dropdown
+    id: standard
+    attributes:
+      label: Video standard
+      options:
+        - NTSC
+        - PAL
+        - Both
+    validations:
+      required: true
+
+  - type: input
+    id: idf-version
+    attributes:
+      label: ESP-IDF version
+      placeholder: "e.g. 5.4.0"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Serial output / logs
+      render: shell
