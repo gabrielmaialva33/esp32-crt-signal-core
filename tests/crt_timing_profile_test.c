@@ -9,7 +9,7 @@ static void test_ntsc_profile_matches_legacy_4x_colorburst_timing(void)
     assert(crt_timing_get_profile(CRT_VIDEO_STANDARD_NTSC, &profile) == ESP_OK);
     assert(profile.samples_per_line == 912);
     assert(profile.sync_width == 64);
-    assert(profile.vsync_width == 840);
+    assert(profile.vsync_width == 392);
     assert(profile.burst_offset == 64);
     assert(profile.burst_width == 40);
     assert(profile.active_offset == 144);
@@ -30,9 +30,27 @@ static void test_pal_profile_matches_legacy_4x_colorburst_timing(void)
     assert((uint32_t)profile.active_offset + (uint32_t)profile.active_width <= (uint32_t)profile.samples_per_line);
 }
 
+static void test_ntsc_vsync_window_is_wide_enough_for_stable_vertical_lock(void)
+{
+    int vsync_lines = 0;
+
+    for (uint16_t line = 0; line < 262; ++line) {
+        if (crt_timing_get_line_type(CRT_VIDEO_STANDARD_NTSC, line) == CRT_TIMING_LINE_TYPE_VSYNC) {
+            ++vsync_lines;
+        }
+    }
+
+    assert(vsync_lines == 6);
+    assert(crt_timing_get_line_type(CRT_VIDEO_STANDARD_NTSC, 242) == CRT_TIMING_LINE_TYPE_BLANK);
+    assert(crt_timing_get_line_type(CRT_VIDEO_STANDARD_NTSC, 243) == CRT_TIMING_LINE_TYPE_VSYNC);
+    assert(crt_timing_get_line_type(CRT_VIDEO_STANDARD_NTSC, 248) == CRT_TIMING_LINE_TYPE_VSYNC);
+    assert(crt_timing_get_line_type(CRT_VIDEO_STANDARD_NTSC, 249) == CRT_TIMING_LINE_TYPE_BLANK);
+}
+
 int main(void)
 {
     test_ntsc_profile_matches_legacy_4x_colorburst_timing();
     test_pal_profile_matches_legacy_4x_colorburst_timing();
+    test_ntsc_vsync_window_is_wide_enough_for_stable_vertical_lock();
     return 0;
 }

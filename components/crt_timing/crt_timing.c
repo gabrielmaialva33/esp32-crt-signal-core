@@ -17,7 +17,7 @@ esp_err_t crt_timing_get_profile(crt_video_standard_t standard, crt_timing_profi
             .active_offset = 144,
             .active_width = 768,
             .sync_width = 64,
-            .vsync_width = 840,
+            .vsync_width = 392,
             .burst_offset = 64,
             .burst_width = 40,
         };
@@ -49,10 +49,10 @@ crt_timing_line_type_t crt_timing_get_line_type(crt_video_standard_t standard, u
         if (line_index < 240) {
             return CRT_TIMING_LINE_TYPE_ACTIVE;
         }
-        if (line_index < 245) {
+        if (line_index < 243) {
             return CRT_TIMING_LINE_TYPE_BLANK;
         }
-        if (line_index < 248) {
+        if (line_index < 249) {
             return CRT_TIMING_LINE_TYPE_VSYNC;
         }
         return CRT_TIMING_LINE_TYPE_BLANK;
