@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>CRT Monitor</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div id="app">
+  <div id="tab-content">
+    <!-- LIVE TAB -->
+    <div class="tab-pane active" data-tab="live">
+      <div class="feed-container">
+        <img id="live-img" alt="live feed">
+        <div id="feed-overlay" class="feed-overlay">NO SIGNAL</div>
+      </div>
+      <button id="btn-capture" class="btn-capture">[ CAPTURE ]</button>
+    </div>
+
+    <!-- GALLERY TAB -->
+    <div class="tab-pane" data-tab="gallery">
+      <div id="gallery-grid" class="gallery-grid"></div>
+      <div id="lightbox" class="lightbox hidden">
+        <img id="lightbox-img">
+        <div class="lightbox-controls">
+          <button id="lb-prev" class="lb-btn">&lt;</button>
+          <span id="lb-name"></span>
+          <button id="lb-next" class="lb-btn">&gt;</button>
+        </div>
+        <button id="lb-close" class="lb-btn lb-close">X</button>
+        <button id="lb-delete" class="lb-btn lb-delete">DEL</button>
+      </div>
+    </div>
+
+    <!-- STATUS TAB -->
+    <div class="tab-pane" data-tab="status">
+      <pre id="status-readout" class="status-readout">Initializing...<span class="cursor">_</span></pre>
+    </div>
+  </div>
+
+  <nav id="tab-bar" class="tab-bar">
+    <button class="tab active" data-tab="live">LIVE</button>
+    <button class="tab" data-tab="gallery">GALLERY</button>
+    <button class="tab" data-tab="status">STATUS</button>
+  </nav>
+
+  <div class="status-line">
+    <span id="ws-status">DISCONNECTED</span>
+    <span id="frame-counter">0 frames</span>
+  </div>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

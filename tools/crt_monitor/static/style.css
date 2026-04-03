@@ -1,0 +1,467 @@
+/* ================================================================
+   CRT Monitor — Retro Terminal Theme
+   Mobile-first, accessed via Tailscale on Android
+   ================================================================ */
+
+:root {
+  --bg:          #0a0a0a;
+  --green:       #00ff41;
+  --green-dim:   #0a6e2a;
+  --green-glow:  rgba(0, 255, 65, 0.4);
+  --cyan:        #00ffcc;
+  --red:         #ff3333;
+  --border:      rgba(0, 255, 51, 0.2);
+
+  --font:        "Fira Code", "JetBrains Mono", monospace;
+  --tab-h:       48px;
+  --status-h:    28px;
+  --radius:      2px;
+}
+
+/* ---- Reset -------------------------------------------------------- */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ---- Scanline body ------------------------------------------------ */
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--green);
+  font-family: var(--font);
+  font-size: 13px;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1000;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0px,
+    transparent 2px,
+    rgba(0, 255, 65, 0.03) 2px,
+    rgba(0, 255, 65, 0.03) 4px
+  );
+}
+
+/* Subtle vignette for CRT curve illusion */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 999;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 60%,
+    rgba(0, 0, 0, 0.6) 100%
+  );
+}
+
+/* ---- App shell ---------------------------------------------------- */
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* ---- Tab content area --------------------------------------------- */
+
+#tab-content {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+.tab-pane {
+  display: none;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.tab-pane.active {
+  display: flex;
+}
+
+/* ---- LIVE tab ----------------------------------------------------- */
+
+.feed-container {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: #000;
+  border-bottom: 1px solid var(--border);
+}
+
+#live-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  image-rendering: pixelated;
+}
+
+.feed-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(18px, 5vw, 32px);
+  letter-spacing: 0.3em;
+  color: var(--green);
+  text-shadow: 0 0 16px var(--green-glow), 0 0 32px var(--green-glow);
+  background: rgba(0, 0, 0, 0.5);
+  animation: flicker 4s infinite;
+}
+
+.feed-overlay.hidden {
+  display: none;
+}
+
+.btn-capture {
+  flex-shrink: 0;
+  width: 100%;
+  padding: 12px 0;
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--border);
+  color: var(--green);
+  font-family: var(--font);
+  font-size: 14px;
+  letter-spacing: 0.2em;
+  cursor: pointer;
+  text-shadow: 0 0 8px var(--green-glow);
+  transition: background 0.15s, text-shadow 0.15s;
+  min-height: 44px;
+}
+
+.btn-capture:hover,
+.btn-capture:active {
+  background: var(--green-dim);
+  text-shadow: 0 0 16px var(--green-glow);
+  color: #fff;
+}
+
+.btn-capture:active {
+  opacity: 0.8;
+}
+
+/* ---- GALLERY tab -------------------------------------------------- */
+
+.gallery-grid {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 6px;
+  align-content: start;
+}
+
+.gallery-grid::-webkit-scrollbar {
+  width: 4px;
+}
+.gallery-grid::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+.gallery-grid::-webkit-scrollbar-thumb {
+  background: var(--green-dim);
+  border-radius: 2px;
+}
+
+.gallery-thumb {
+  aspect-ratio: 4/3;
+  object-fit: cover;
+  width: 100%;
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  image-rendering: pixelated;
+  filter: sepia(0.1) brightness(0.9);
+  transition: border-color 0.15s, filter 0.15s, box-shadow 0.15s;
+}
+
+.gallery-thumb:hover,
+.gallery-thumb:active {
+  border-color: var(--green);
+  filter: none;
+  box-shadow: 0 0 8px var(--green-glow);
+}
+
+.gallery-empty {
+  grid-column: 1 / -1;
+  padding: 40px 0;
+  text-align: center;
+  color: var(--green-dim);
+  letter-spacing: 0.15em;
+}
+
+/* ---- Lightbox ----------------------------------------------------- */
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.95);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.lightbox.hidden {
+  display: none;
+}
+
+#lightbox-img {
+  max-width: 100%;
+  max-height: calc(100dvh - 120px);
+  object-fit: contain;
+  border: 1px solid var(--border);
+  box-shadow: 0 0 24px var(--green-glow);
+  image-rendering: pixelated;
+}
+
+.lightbox-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 12px;
+  width: 100%;
+  justify-content: center;
+}
+
+#lb-name {
+  color: var(--cyan);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-align: center;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: 0 0 6px rgba(0, 255, 204, 0.4);
+}
+
+.lb-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--green);
+  font-family: var(--font);
+  font-size: 14px;
+  padding: 8px 16px;
+  min-width: 44px;
+  min-height: 44px;
+  cursor: pointer;
+  border-radius: var(--radius);
+  letter-spacing: 0.1em;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.lb-btn:hover,
+.lb-btn:active {
+  background: var(--green-dim);
+  border-color: var(--green);
+}
+
+.lb-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.lb-close:hover,
+.lb-close:active {
+  background: rgba(255, 51, 51, 0.2);
+  border-color: var(--red);
+}
+
+.lb-delete {
+  position: absolute;
+  bottom: 16px;
+  right: 12px;
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.lb-delete:hover,
+.lb-delete:active {
+  background: rgba(255, 51, 51, 0.2);
+  border-color: var(--red);
+}
+
+/* ---- STATUS tab --------------------------------------------------- */
+
+.status-readout {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+  font-family: var(--font);
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--green);
+  text-shadow: 0 0 6px var(--green-glow);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.status-readout::-webkit-scrollbar {
+  width: 4px;
+}
+.status-readout::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+.status-readout::-webkit-scrollbar-thumb {
+  background: var(--green-dim);
+  border-radius: 2px;
+}
+
+/* ---- Cursor ------------------------------------------------------- */
+
+.cursor {
+  display: inline-block;
+  color: var(--green);
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+/* ---- Tab bar (BOTTOM — thumb-reachable) --------------------------- */
+
+.tab-bar {
+  flex-shrink: 0;
+  display: flex;
+  height: var(--tab-h);
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.tab {
+  flex: 1;
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border);
+  color: var(--green-dim);
+  font-family: var(--font);
+  font-size: 12px;
+  letter-spacing: 0.15em;
+  cursor: pointer;
+  min-height: 44px;
+  transition: color 0.15s, background 0.15s, text-shadow 0.15s;
+}
+
+.tab:last-child {
+  border-right: none;
+}
+
+.tab:hover {
+  color: var(--green);
+  background: rgba(0, 255, 65, 0.05);
+}
+
+.tab.active {
+  color: var(--green);
+  background: rgba(0, 255, 65, 0.08);
+  text-shadow: 0 0 8px var(--green-glow);
+  border-top: 2px solid var(--green);
+}
+
+/* ---- Status line (connection + frame counter) --------------------- */
+
+.status-line {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: var(--status-h);
+  padding: 0 10px;
+  border-top: 1px solid var(--border);
+  background: rgba(0, 255, 65, 0.03);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--green-dim);
+}
+
+#ws-status {
+  transition: color 0.3s, text-shadow 0.3s;
+}
+
+#ws-status.connected {
+  color: var(--green);
+  text-shadow: 0 0 6px var(--green-glow);
+}
+
+#ws-status.error {
+  color: var(--red);
+  text-shadow: 0 0 6px rgba(255, 51, 51, 0.4);
+}
+
+#frame-counter {
+  color: var(--green-dim);
+}
+
+/* ---- Animations --------------------------------------------------- */
+
+@keyframes flicker {
+  0%   { opacity: 1; }
+  92%  { opacity: 1; }
+  93%  { opacity: 0.7; }
+  94%  { opacity: 1; }
+  96%  { opacity: 0.85; }
+  97%  { opacity: 1; }
+  100% { opacity: 1; }
+}
+
+/* ---- Utility ------------------------------------------------------ */
+
+.hidden {
+  display: none !important;
+}
+
+/* ---- Desktop tweaks (secondary) ----------------------------------- */
+
+@media (min-width: 600px) {
+  body {
+    font-size: 14px;
+  }
+
+  .gallery-grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    padding: 12px;
+    gap: 8px;
+  }
+
+  .status-readout {
+    font-size: 13px;
+    padding: 16px 24px;
+  }
+
+  .tab {
+    font-size: 13px;
+    letter-spacing: 0.2em;
+  }
+
+  .status-line {
+    font-size: 11px;
+    padding: 0 16px;
+  }
+}
