@@ -58,7 +58,17 @@ idf.py -p /dev/ttyUSB0 flash monitor
 ## 🏗️ Architecture
 
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#00ff41', 'primaryTextColor': '#fff', 'primaryBorderColor': '#2d1b69', 'lineColor': '#00ff41'}}}%%
+%%{init: {'theme': 'base', 'themeVariables': {
+  'background': '#0f172a',
+  'primaryTextColor': '#f8fafc',
+  'primaryBorderColor': '#cbd5e1',
+  'lineColor': '#94a3b8',
+  'secondaryColor': '#111827',
+  'tertiaryColor': '#0b1220',
+  'clusterBkg': '#111827',
+  'clusterBorder': '#475569',
+  'fontFamily': 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
+}}}%%
 flowchart LR
     subgraph Core1["🔧 Prep Task (Core 1)"]
         direction TB
@@ -83,6 +93,16 @@ flowchart LR
     RING --> I2S --> DAC --> GPIO
 
     ISR["EOF ISR<br/>Recycle Slots"] -.-> RING
+
+    classDef stage fill:#14532d,stroke:#86efac,color:#f8fafc,stroke-width:2px;
+    classDef dma fill:#1d4ed8,stroke:#93c5fd,color:#f8fafc,stroke-width:2px;
+    classDef hw fill:#7c2d12,stroke:#fdba74,color:#f8fafc,stroke-width:2px;
+    classDef note fill:#3f3f46,stroke:#d4d4d8,color:#f8fafc,stroke-width:2px;
+
+    class BLANK,SYNC,BURST,ACTIVE stage;
+    class RING dma;
+    class I2S,DAC,GPIO hw;
+    class ISR note;
 ```
 
 ---
@@ -106,16 +126,41 @@ flowchart LR
 
 Each scanline passes through deterministic stages with a strict contract:
 
-```
-┌─────────┐   ┌───────────┐   ┌─────────────┐   ┌──────────────┐
-│ Blanking │──▶│ Sync Pulse│──▶│ Color Burst │──▶│ Active Video │
-│ (porch)  │   │ (H/V)     │   │ (reference) │   │ (pixels→IRE) │
-└─────────┘   └───────────┘   └─────────────┘   └──────────────┘
-                                                        │
-                                                        ▼
-                                                  DMA Ring Slot
-                                                  ──────────────
-                                                  I2S0 → DAC → GPIO25
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {
+  'background': '#0f172a',
+  'primaryTextColor': '#f8fafc',
+  'primaryBorderColor': '#cbd5e1',
+  'lineColor': '#94a3b8',
+  'secondaryColor': '#111827',
+  'tertiaryColor': '#0b1220',
+  'clusterBkg': '#111827',
+  'clusterBorder': '#475569',
+  'fontFamily': 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
+}}}%%
+flowchart LR
+    SLOT_IN["Recycled DMA Slot"] --> BLANK_STAGE["1. Blanking<br/>Front / Back Porch"]
+    BLANK_STAGE --> SYNC_STAGE["2. Sync Pulse<br/>H-Sync / V-Sync"]
+    SYNC_STAGE --> BURST_STAGE["3. Color Burst<br/>Phase Reference"]
+    BURST_STAGE --> ACTIVE_STAGE["4. Active Video<br/>Pixels -> IRE -> DAC Words"]
+    ACTIVE_STAGE --> SLOT_OUT["Ready DMA Slot"]
+    SLOT_OUT --> OUTPUT["I2S0 -> DAC -> GPIO25"]
+
+    RULES["No malloc<br/>No blocking<br/>No logging<br/>No peripheral access"] -.-> BLANK_STAGE
+    RULES -.-> SYNC_STAGE
+    RULES -.-> BURST_STAGE
+    RULES -.-> ACTIVE_STAGE
+    SHED["If timing slips:<br/>shed optional stages, preserve sync"] -.-> ACTIVE_STAGE
+
+    classDef queue fill:#1d4ed8,stroke:#93c5fd,color:#f8fafc,stroke-width:2px;
+    classDef stage fill:#14532d,stroke:#86efac,color:#f8fafc,stroke-width:2px;
+    classDef rule fill:#3f3f46,stroke:#d4d4d8,color:#f8fafc,stroke-width:2px;
+    classDef output fill:#7c2d12,stroke:#fdba74,color:#f8fafc,stroke-width:2px;
+
+    class SLOT_IN,SLOT_OUT queue;
+    class BLANK_STAGE,SYNC_STAGE,BURST_STAGE,ACTIVE_STAGE stage;
+    class RULES,SHED rule;
+    class OUTPUT output;
 ```
 
 **Stage rules:**
