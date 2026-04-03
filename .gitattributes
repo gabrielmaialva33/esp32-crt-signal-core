@@ -1,0 +1,37 @@
+# ── Line endings ─────────────────────────────────────────────────────
+* text=auto eol=lf
+
+# Force LF for source
+*.c text eol=lf
+*.h text eol=lf
+*.cpp text eol=lf
+*.hpp text eol=lf
+*.cmake text eol=lf
+*.py text eol=lf
+*.sh text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+
+# Binary — don't diff, don't merge
+*.bin binary
+*.elf binary
+*.hex binary
+*.a binary
+*.so binary
+*.o binary
+*.jpg binary
+*.png binary
+*.gif binary
+*.pdf binary
+
+# ── GitHub Linguist ──────────────────────────────────────────────────
+# Show as C project, not CMake
+CMakeLists.txt linguist-detectable=false
+*.cmake linguist-detectable=false
+sdkconfig linguist-generated
+sdkconfig.defaults linguist-documentation
+
+# Build artifacts — exclude from stats
+build/** linguist-generated
