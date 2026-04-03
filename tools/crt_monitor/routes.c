@@ -73,8 +73,8 @@ static void handle_api_capture(struct mg_connection *c,
     fclose(f);
 
     mg_http_reply(c, 200, "Content-Type: application/json\r\n",
-                  "{\"ok\":true,\"file\":\"%s\",\"bytes\":%zu}\n",
-                  filename, len);
+                  "{\"ok\":true,\"file\":\"%s\",\"bytes\":%lu}\n",
+                  filename, (unsigned long)len);
 }
 
 /* ------------------------------------------------------------------ */

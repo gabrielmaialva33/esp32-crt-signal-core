@@ -65,7 +65,7 @@ int main(int argc, char *argv[])
     int         port         = 8080;
     const char *device       = "/dev/video0";
     const char *captures_dir = "captures";
-    const char *static_dir   = "www";
+    const char *static_dir   = "static";
 
     int opt;
     while ((opt = getopt(argc, argv, "p:d:c:s:h")) != -1) {
