@@ -54,22 +54,22 @@ static const uint32_t k_demo_pal_bar_patterns_odd[CRT_DEMO_COLOR_BAR_COUNT] = {
 
 static uint16_t crt_demo_pattern_sample_p0(uint32_t packed)
 {
-    return (uint16_t)((packed >> 16) & 0xFFFFU);
+    return (uint16_t)((packed << 8) & 0xFF00U);
 }
 
 static uint16_t crt_demo_pattern_sample_p1(uint32_t packed)
 {
-    return (uint16_t)((packed >> 8) & 0xFFFFU);
+    return (uint16_t)(packed & 0xFF00U);
 }
 
 static uint16_t crt_demo_pattern_sample_p2(uint32_t packed)
 {
-    return (uint16_t)(packed & 0xFFFFU);
+    return (uint16_t)((packed >> 8) & 0xFF00U);
 }
 
 static uint16_t crt_demo_pattern_sample_p3(uint32_t packed)
 {
-    return (uint16_t)((packed << 8) & 0xFFFFU);
+    return (uint16_t)((packed >> 16) & 0xFF00U);
 }
 
 static void crt_demo_pattern_encode_legacy_quad(const uint32_t *packed_colors, uint16_t *dst)
