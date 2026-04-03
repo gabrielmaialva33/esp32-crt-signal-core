@@ -1,0 +1,39 @@
+menu "CRT Core"
+
+choice CRT_VIDEO_STANDARD
+    prompt "Composite video standard"
+    default CRT_VIDEO_STANDARD_NTSC
+    help
+        Select the composite timing profile used by the CRT core.
+
+config CRT_VIDEO_STANDARD_NTSC
+    bool "NTSC"
+
+config CRT_VIDEO_STANDARD_PAL
+    bool "PAL"
+
+endchoice
+
+config CRT_ENABLE_COLOR
+    bool "Enable composite color burst"
+    default y
+    help
+        Enables chroma burst generation and color demo output.
+        Disable this to force monochrome output mode.
+
+config CRT_TEST_STANDARD_TOGGLE
+    bool "Test mode: auto-toggle NTSC/PAL"
+    default n
+    help
+        Automatically alternates between NTSC and PAL at runtime.
+        Useful for CRT compatibility testing.
+
+config CRT_TEST_STANDARD_TOGGLE_INTERVAL_S
+    int "Test mode toggle interval (seconds)"
+    depends on CRT_TEST_STANDARD_TOGGLE
+    range 1 120
+    default 5
+    help
+        Number of seconds to keep each video standard before toggling.
+
+endmenu
