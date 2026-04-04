@@ -1,12 +1,18 @@
 #include "crt_fb.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #include "esp_check.h"
 
+#define CRT_FB_PALETTE_SIZE_INDEXED8  256
+
+/* ── Lifecycle ────────────────────────────────────────────────────── */
+
 esp_err_t crt_fb_surface_init(crt_fb_surface_t *surface, uint16_t width, uint16_t height, crt_fb_format_t format)
 {
     ESP_RETURN_ON_FALSE(surface != NULL, ESP_ERR_INVALID_ARG, "crt_fb", "surface is null");
+    ESP_RETURN_ON_FALSE(width > 0 && height > 0, ESP_ERR_INVALID_ARG, "crt_fb", "zero dimension");
 
     *surface = (crt_fb_surface_t) {
         .width = width,
@@ -14,7 +20,56 @@ esp_err_t crt_fb_surface_init(crt_fb_surface_t *surface, uint16_t width, uint16_
         .format = format,
         .buffer = NULL,
         .buffer_size = 0,
+        .palette = NULL,
+        .palette_size = 0,
     };
+    return ESP_OK;
+}
+
+esp_err_t crt_fb_surface_alloc(crt_fb_surface_t *surface)
+{
+    size_t buf_size;
+    uint16_t palette_entries;
+
+    ESP_RETURN_ON_FALSE(surface != NULL, ESP_ERR_INVALID_ARG, "crt_fb", "surface is null");
+    ESP_RETURN_ON_FALSE(surface->buffer == NULL, ESP_ERR_INVALID_STATE, "crt_fb", "already allocated");
+
+    switch (surface->format) {
+    case CRT_FB_FORMAT_INDEXED8:
+        buf_size = (size_t)surface->width * surface->height;
+        palette_entries = CRT_FB_PALETTE_SIZE_INDEXED8;
+        break;
+    default:
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    surface->buffer = calloc(1, buf_size);
+    ESP_RETURN_ON_FALSE(surface->buffer != NULL, ESP_ERR_NO_MEM, "crt_fb", "buffer alloc failed (%u bytes)", (unsigned)buf_size);
+    surface->buffer_size = buf_size;
+
+    surface->palette = calloc(palette_entries, sizeof(uint16_t));
+    if (surface->palette == NULL) {
+        free(surface->buffer);
+        surface->buffer = NULL;
+        surface->buffer_size = 0;
+        return ESP_ERR_NO_MEM;
+    }
+    surface->palette_size = palette_entries;
+
+    return ESP_OK;
+}
+
+esp_err_t crt_fb_surface_free(crt_fb_surface_t *surface)
+{
+    ESP_RETURN_ON_FALSE(surface != NULL, ESP_ERR_INVALID_ARG, "crt_fb", "surface is null");
+
+    free(surface->buffer);
+    surface->buffer = NULL;
+    surface->buffer_size = 0;
+    free(surface->palette);
+    surface->palette = NULL;
+    surface->palette_size = 0;
+
     return ESP_OK;
 }
 
@@ -22,6 +77,93 @@ esp_err_t crt_fb_surface_deinit(crt_fb_surface_t *surface)
 {
     ESP_RETURN_ON_FALSE(surface != NULL, ESP_ERR_INVALID_ARG, "crt_fb", "surface is null");
 
+    if (surface->buffer != NULL) {
+        crt_fb_surface_free(surface);
+    }
     memset(surface, 0, sizeof(*surface));
     return ESP_OK;
+}
+
+/* ── Pixel access ─────────────────────────────────────────────────── */
+
+uint8_t *crt_fb_row(const crt_fb_surface_t *surface, uint16_t y)
+{
+    if (surface == NULL || surface->buffer == NULL || y >= surface->height) {
+        return NULL;
+    }
+    return &surface->buffer[(size_t)y * surface->width];
+}
+
+void crt_fb_put(crt_fb_surface_t *surface, uint16_t x, uint16_t y, uint8_t value)
+{
+    if (x < surface->width && y < surface->height) {
+        surface->buffer[(size_t)y * surface->width + x] = value;
+    }
+}
+
+uint8_t crt_fb_get(const crt_fb_surface_t *surface, uint16_t x, uint16_t y)
+{
+    if (x < surface->width && y < surface->height) {
+        return surface->buffer[(size_t)y * surface->width + x];
+    }
+    return 0;
+}
+
+void crt_fb_clear(crt_fb_surface_t *surface, uint8_t value)
+{
+    if (surface != NULL && surface->buffer != NULL) {
+        memset(surface->buffer, value, surface->buffer_size);
+    }
+}
+
+/* ── Palette ──────────────────────────────────────────────────────── */
+
+void crt_fb_palette_set(crt_fb_surface_t *surface, uint8_t index, uint16_t dac_level)
+{
+    if (surface != NULL && surface->palette != NULL && index < surface->palette_size) {
+        surface->palette[index] = dac_level;
+    }
+}
+
+void crt_fb_palette_init_grayscale(crt_fb_surface_t *surface,
+                                   uint16_t blank_level,
+                                   uint16_t white_level)
+{
+    if (surface == NULL || surface->palette == NULL || surface->palette_size < 2) {
+        return;
+    }
+    for (uint16_t i = 0; i < surface->palette_size; ++i) {
+        surface->palette[i] = (uint16_t)(blank_level +
+            (uint32_t)i * (white_level - blank_level) / (surface->palette_size - 1));
+    }
+}
+
+/* ── Scanline hook ────────────────────────────────────────────────── */
+
+void crt_fb_scanline_hook(const crt_scanline_t *scanline,
+                          uint16_t *active_buf,
+                          uint16_t active_width,
+                          void *user_data)
+{
+    const crt_fb_surface_t *surface = (const crt_fb_surface_t *)user_data;
+
+    if (!CRT_SCANLINE_HAS_LOGICAL(scanline) ||
+        scanline->logical_line >= surface->height ||
+        surface->buffer == NULL ||
+        surface->palette == NULL) {
+        return;
+    }
+
+    const uint8_t *row = &surface->buffer[(size_t)scanline->logical_line * surface->width];
+    const uint16_t *pal = surface->palette;
+
+    /* Fixed-point 16.16 stepping — avoids division in inner loop.
+     * On Xtensa LX6: shift+add+load ≈ 5 cycles/pixel vs 35+ for division. */
+    uint32_t step = ((uint32_t)surface->width << 16) / active_width;
+    uint32_t acc = 0;
+
+    for (uint16_t i = 0; i < active_width; ++i) {
+        active_buf[i] = pal[row[acc >> 16]];
+        acc += step;
+    }
 }
