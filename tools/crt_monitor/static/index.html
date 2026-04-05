@@ -198,7 +198,7 @@ nav button.on{color:var(--g);background:rgba(0,255,65,.06);border-top:2px solid 
 
   /* ── Gallery ───────────────────────────────── */
   function loadGallery(){
-    fetch('/api/gallery').then(function(r){return r.json()}).then(function(d){
+    fetch('/api/gallery',{cache:'no-store'}).then(function(r){return r.json()}).then(function(d){
       d.sort(function(a,b){return b.mtime-a.mtime});
       items=d;renderGal();
     }).catch(function(){gal.innerHTML='<p class="gallery-empty">ERROR</p>'});
@@ -244,7 +244,7 @@ nav button.on{color:var(--g);background:rgba(0,255,65,.06);border-top:2px solid 
 
   /* ── Status ────────────────────────────────── */
   function loadStatus(){
-    fetch('/api/status').then(function(r){return r.json()}).then(function(d){
+    fetch('/api/status',{cache:'no-store'}).then(function(r){return r.json()}).then(function(d){
       var s='';
       s+='  VIDEO:    '+(d.video_standard||'N/A')+'\n';
       s+='  COLOR:    '+(d.color_enabled?'ON':'OFF')+'\n';
