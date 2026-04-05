@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>PhosphorOS Reset</title>
+<style>
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0a0a0a;color:#00ff41;font:14px "Fira Code","JetBrains Mono",monospace}
+.box{max-width:540px;padding:20px;border:1px solid rgba(0,255,65,.25);background:rgba(0,255,65,.04)}
+small{color:#00cc88}
+</style>
+</head>
+<body>
+<div class="box">
+  <div id="msg">Resetting cache and service workers...</div>
+  <small>Do not close this page.</small>
+</div>
+<script>
+(async function(){
+  var msg=document.getElementById('msg');
+  try{
+    if('serviceWorker' in navigator){
+      var regs=await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(function(r){return r.unregister();}));
+    }
+    if('caches' in window){
+      var keys=await caches.keys();
+      await Promise.all(keys.map(function(k){return caches.delete(k);}));
+    }
+    msg.textContent='Reset complete. Redirecting...';
+    setTimeout(function(){location.replace('/?reset_done=1&ts='+Date.now());},700);
+  }catch(e){
+    msg.textContent='Reset failed: '+(e&&e.message?e.message:String(e));
+  }
+})();
+</script>
+</body>
+</html>
