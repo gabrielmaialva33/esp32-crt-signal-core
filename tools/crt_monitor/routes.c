@@ -33,6 +33,78 @@ static void handle_ws_live(struct mg_connection *c, struct mg_http_message *hm)
 }
 
 /* ------------------------------------------------------------------ */
+/* GET /api/mtime — latest mtime of static files (livereload trigger)   */
+/* ------------------------------------------------------------------ */
+static void handle_api_mtime(struct mg_connection *c,
+                              struct mg_http_message *hm)
+{
+    (void)hm;
+    long latest = 0;
+    const char *files[] = {"static/index.html", "static/app.js", "static/style.css", NULL};
+    for (int i = 0; files[i]; i++) {
+        struct stat st;
+        if (stat(files[i], &st) == 0 && (long)st.st_mtime > latest) {
+            latest = (long)st.st_mtime;
+        }
+    }
+    mg_http_reply(c, 200, "Content-Type: application/json\r\nCache-Control: no-cache\r\n",
+                  "{\"mtime\":%ld}\n", latest);
+}
+
+/* ------------------------------------------------------------------ */
+/* GET /stream — Motion-JPEG stream (works everywhere, no WebSocket)    */
+/* ------------------------------------------------------------------ */
+static void handle_stream(struct mg_connection *c,
+                           struct mg_http_message *hm)
+{
+    (void)hm;
+    if (!s_app || !s_app->capture) {
+        mg_http_reply(c, 503, "", "no capture\n");
+        return;
+    }
+
+    mg_printf(c, "HTTP/1.1 200 OK\r\n"
+                 "Content-Type: multipart/x-mixed-replace; boundary=frame\r\n"
+                 "Cache-Control: no-cache\r\n"
+                 "Connection: keep-alive\r\n\r\n");
+    c->data[0] = 'M'; /* mark as MJPEG client */
+}
+
+/* ------------------------------------------------------------------ */
+/* GET /api/snapshot — returns current JPEG frame without saving        */
+/* ------------------------------------------------------------------ */
+static void handle_api_snapshot(struct mg_connection *c,
+                                 struct mg_http_message *hm)
+{
+    (void)hm;
+    if (!s_app || !s_app->capture) {
+        mg_http_reply(c, 503, "Content-Type: text/plain\r\n", "no capture\n");
+        return;
+    }
+
+    const uint8_t *buf = NULL;
+    size_t len = 0;
+    /* Retry a few times — timer may have consumed the current frame */
+    for (int attempt = 0; attempt < 10; attempt++) {
+        if (capture_grab(s_app->capture, &buf, &len) == 0 && buf != NULL) break;
+        usleep(10000); /* 10ms */
+    }
+    if (buf == NULL) {
+        mg_http_reply(c, 500, "Content-Type: text/plain\r\n", "grab failed\n");
+        return;
+    }
+
+    mg_printf(c, "HTTP/1.1 200 OK\r\n"
+                 "Content-Type: image/jpeg\r\n"
+                 "Content-Length: %lu\r\n"
+                 "Cache-Control: no-cache, no-store, must-revalidate\r\n"
+                 "Pragma: no-cache\r\n"
+                 "Expires: 0\r\n\r\n",
+              (unsigned long)len);
+    mg_send(c, buf, len);
+}
+
+/* ------------------------------------------------------------------ */
 /* POST /api/capture                                                    */
 /* ------------------------------------------------------------------ */
 static void handle_api_capture(struct mg_connection *c,
@@ -92,7 +164,12 @@ static void handle_api_gallery(struct mg_connection *c,
 
     DIR *dir = opendir(s_app->captures_dir);
     if (!dir) {
-        mg_http_reply(c, 200, "Content-Type: application/json\r\n", "[]\n");
+        mg_http_reply(c, 200,
+                      "Content-Type: application/json\r\n"
+                      "Cache-Control: no-cache, no-store, must-revalidate\r\n"
+                      "Pragma: no-cache\r\n"
+                      "Expires: 0\r\n",
+                      "[]\n");
         return;
     }
 
@@ -128,7 +205,12 @@ static void handle_api_gallery(struct mg_connection *c,
     buf[pos++] = '\n';
     buf[pos]   = '\0';
 
-    mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s", buf);
+    mg_http_reply(c, 200,
+                  "Content-Type: application/json\r\n"
+                  "Cache-Control: no-cache, no-store, must-revalidate\r\n"
+                  "Pragma: no-cache\r\n"
+                  "Expires: 0\r\n",
+                  "%s", buf);
 }
 
 /* ------------------------------------------------------------------ */
@@ -281,7 +363,12 @@ static void handle_api_status(struct mg_connection *c,
     static char buf[512];
     size_t n = status_to_json(buf, sizeof(buf));
     buf[n] = '\0';
-    mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%s\n", buf);
+    mg_http_reply(c, 200,
+                  "Content-Type: application/json\r\n"
+                  "Cache-Control: no-cache, no-store, must-revalidate\r\n"
+                  "Pragma: no-cache\r\n"
+                  "Expires: 0\r\n",
+                  "%s\n", buf);
 }
 
 /* ------------------------------------------------------------------ */
@@ -294,9 +381,29 @@ void routes_handle(struct mg_connection *c, int ev, void *ev_data)
         struct mg_str uri    = hm->uri;
         struct mg_str method = hm->method;
 
+        /* MJPEG stream — universal, works on iPhone/Firefox/anything */
+        if (mg_match(uri, mg_str("/stream"), NULL)) {
+            handle_stream(c, hm);
+            return;
+        }
+
         /* WebSocket upgrade */
         if (mg_match(uri, mg_str("/ws/live"), NULL)) {
             handle_ws_live(c, hm);
+            return;
+        }
+
+        /* GET /api/mtime (livereload) */
+        if (mg_strcmp(method, mg_str("GET")) == 0 &&
+            mg_match(uri, mg_str("/api/mtime"), NULL)) {
+            handle_api_mtime(c, hm);
+            return;
+        }
+
+        /* GET /api/snapshot */
+        if (mg_strcmp(method, mg_str("GET")) == 0 &&
+            mg_match(uri, mg_str("/api/snapshot"), NULL)) {
+            handle_api_snapshot(c, hm);
             return;
         }
 
@@ -363,6 +470,17 @@ void routes_handle(struct mg_connection *c, int ev, void *ev_data)
             return;
         }
 
+        /* /live → MJPEG PWA page (universal, iPhone/Safari) */
+        if (mg_match(uri, mg_str("/live"), NULL)) {
+            struct mg_http_serve_opts opts = {
+                .root_dir = s_app ? s_app->static_dir : "static",
+                .extra_headers = "Cache-Control: no-cache\r\n"
+            };
+            hm->uri = mg_str("/live.html");
+            mg_http_serve_dir(c, hm, &opts);
+            return;
+        }
+
         /* Everything else → static dir */
         if (s_app && s_app->static_dir) {
             struct mg_http_serve_opts opts = {
@@ -413,7 +531,16 @@ void routes_broadcast_frame(struct mg_mgr *mgr, const uint8_t *jpg, size_t len)
 {
     for (struct mg_connection *c = mgr->conns; c != NULL; c = c->next) {
         if (c->data[0] == 'W') {
+            /* WebSocket client */
             mg_ws_send(c, (const char *)jpg, len, WEBSOCKET_OP_BINARY);
+        } else if (c->data[0] == 'M') {
+            /* MJPEG stream client */
+            mg_printf(c, "--frame\r\n"
+                         "Content-Type: image/jpeg\r\n"
+                         "Content-Length: %lu\r\n\r\n",
+                      (unsigned long)len);
+            mg_send(c, jpg, len);
+            mg_send(c, "\r\n", 2);
         }
     }
 }
