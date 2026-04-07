@@ -133,9 +133,7 @@ static void IRAM_ATTR crt_hal_isr(void *arg)
         }
     }
 
-    if (higher_priority_task_woken == pdTRUE) {
-        portYIELD_FROM_ISR();
-    }
+    portYIELD_FROM_ISR(higher_priority_task_woken);
 }
 
 static void crt_hal_enable_output(void)
@@ -155,6 +153,8 @@ static void crt_hal_disable_output(void)
     portEXIT_CRITICAL(&s_hal.dac_lock);
 }
 
+static void crt_hal_free_dma_resources(void);
+
 static esp_err_t crt_hal_alloc_dma_resources(void)
 {
     size_t buffer_bytes = s_hal.config.dma_samples_per_line * sizeof(uint16_t);
@@ -167,7 +167,11 @@ static esp_err_t crt_hal_alloc_dma_resources(void)
 
     for (size_t i = 0; i < s_hal.config.dma_line_count; ++i) {
         s_hal.line_buffers[i] = heap_caps_calloc(1, buffer_bytes, CRT_HAL_DESC_ALLOC_CAPS);
-        ESP_RETURN_ON_FALSE(s_hal.line_buffers[i] != NULL, ESP_ERR_NO_MEM, TAG, "failed to allocate line buffer");
+        if (s_hal.line_buffers[i] == NULL) {
+            ESP_LOGE(TAG, "failed to allocate line buffer %u", (unsigned) i);
+            crt_hal_free_dma_resources();
+            return ESP_ERR_NO_MEM;
+        }
 
         lldesc_config(&s_hal.descs[i], 1, 1, 0, buffer_bytes);
         s_hal.descs[i].size = buffer_bytes;
