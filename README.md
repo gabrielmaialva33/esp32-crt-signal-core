@@ -7,7 +7,7 @@
 [![ESP-IDF](https://img.shields.io/badge/ESP--IDF-5.4+-C11?style=for-the-badge&logo=espressif&logoColor=fff)](https://docs.espressif.com/projects/esp-idf/)
 [![C](https://img.shields.io/badge/C11-Embedded-555?style=for-the-badge&logo=c&logoColor=fff)](https://en.wikipedia.org/wiki/C11_(C_standard_revision))
 [![ESP32](https://img.shields.io/badge/ESP32--D0WD--V3-GPIO25-e7352c?style=for-the-badge&logo=espressif&logoColor=fff)](https://www.espressif.com/en/products/socs/esp32)
-[![Tests](https://img.shields.io/badge/tests-4_suites-00875A?style=for-the-badge)](./tests)
+[![Tests](https://img.shields.io/badge/tests-host_checked-00875A?style=for-the-badge)](./tests)
 [![License](https://img.shields.io/badge/license-MIT-2d1b69?style=for-the-badge)](./LICENSE)
 
 **Scanlines are the heartbeat. Sync is the contract. The signal never lies.**
@@ -51,8 +51,8 @@ void app_main(void)
 
 ```bash
 # Build & flash
-idf.py build
-idf.py -p /dev/ttyUSB0 flash monitor
+bash -c '. ~/esp/esp-idf/export.sh && idf.py build'
+bash -c '. ~/esp/esp-idf/export.sh && idf.py -p /dev/ttyACM0 flash monitor'
 ```
 
 ---
@@ -120,7 +120,7 @@ flowchart LR
 | **`crt_line_policy`** | Per-line type decisions            | VBI, sync, active classification |
 | **`crt_demo`**        | Test pattern generator             | Color bars, ramps, grids         |
 | **`crt_diag`**        | Runtime telemetry                  | Late line detection, ISR stats   |
-| **`crt_fb`**          | Framebuffer stub                   | Future: external pixel source    |
+| **`crt_fb`**          | Indexed-8 framebuffer adapter      | Hook-based active video source   |
 
 ---
 
@@ -208,7 +208,7 @@ esp32-crt-signal-core/
 │   ├── crt_timing/                         # NTSC/PAL timing profiles
 │   ├── crt_demo/                           # Test pattern generator
 │   ├── crt_diag/                           # Runtime telemetry
-│   └── crt_fb/                             # Framebuffer interface (stub)
+│   └── crt_fb/                             # Indexed-8 framebuffer + scanline hook
 ├── tests/                                  # Host-compiled C tests
 │   ├── burst_waveform_test.c
 │   ├── crt_timing_profile_test.c
@@ -243,14 +243,11 @@ esp32-crt-signal-core/
 git clone https://github.com/gabrielmaialva33/esp32-crt-signal-core.git
 cd esp32-crt-signal-core
 
-# Source ESP-IDF (if not already)
-. $IDF_PATH/export.sh
-
 # Build
-idf.py build
+bash -c '. ~/esp/esp-idf/export.sh && idf.py build'
 
 # Flash & monitor
-idf.py -p /dev/ttyUSB0 flash monitor
+bash -c '. ~/esp/esp-idf/export.sh && idf.py -p /dev/ttyACM0 flash monitor'
 ```
 
 ### Running Tests (Host)
@@ -277,22 +274,35 @@ gcc -I components/crt_core/include -I components/crt_timing/include \
     tests/crt_demo_pattern_test.c components/crt_demo/crt_demo_pattern.c \
     components/crt_core/crt_waveform.c -lm \
     -o /tmp/demo_test && /tmp/demo_test
+
+# Scanline ABI layout + constants
+gcc -I components/crt_core/include -I components/crt_timing/include \
+    -I tests/stubs tests/crt_scanline_abi_test.c \
+    -o /tmp/scanline_abi_test && /tmp/scanline_abi_test
+
+# Scanline header contract
+gcc -I components/crt_core/include -I components/crt_timing/include \
+    -I tests/stubs tests/crt_scanline_header_test.c \
+    -o /tmp/scanline_header_test && /tmp/scanline_header_test
+
+# Framebuffer surface + palette + scanline hook
+gcc -I components/crt_fb/include -I components/crt_core/include \
+    -I components/crt_timing/include -I tests/stubs \
+    tests/crt_fb_test.c components/crt_fb/crt_fb.c \
+    -o /tmp/crt_fb_test && /tmp/crt_fb_test
 ```
 
 ---
 
 ## 📊 Stats
 
-| Metric             |           Value |
-|:-------------------|----------------:|
-| **C source files** |               8 |
-| **Header files**   |               8 |
-| **Test suites**    |               4 |
-| **Total lines**    |           1,676 |
-| **Components**     |               6 |
-| **DMA channels**   | I2S0 continuous |
-| **DAC resolution** |           8-bit |
-| **Output pin**     |          GPIO25 |
+| Metric                 |           Value |
+|:-----------------------|----------------:|
+| **Host test programs** |               7 |
+| **Components**         |               6 |
+| **DMA channels**       | I2S0 continuous |
+| **DAC resolution**     |           8-bit |
+| **Output pin**         |          GPIO25 |
 
 ---
 
