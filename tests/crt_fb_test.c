@@ -108,6 +108,42 @@ static void test_palette_grayscale(void)
 
 /* ── Scanline hook ────────────────────────────────────────────────── */
 
+static void test_layer_fetch_adapter(void)
+{
+    crt_fb_surface_t s;
+    crt_fb_surface_init(&s, 4, 2, CRT_FB_FORMAT_INDEXED8);
+    crt_fb_surface_alloc(&s);
+
+    /* Paint row 1: [10, 20, 30, 40] */
+    crt_fb_put(&s, 0, 1, 10);
+    crt_fb_put(&s, 1, 1, 20);
+    crt_fb_put(&s, 2, 1, 30);
+    crt_fb_put(&s, 3, 1, 40);
+
+    uint8_t out[8];
+    memset(out, 0xFF, sizeof(out));
+
+    /* Width 8 (2x scale) */
+    crt_fb_layer_fetch(&s, 1, out, 8);
+    assert(out[0] == 10 && out[1] == 10);
+    assert(out[2] == 20 && out[3] == 20);
+    assert(out[4] == 30 && out[5] == 30);
+    assert(out[6] == 40 && out[7] == 40);
+
+    /* Line out of bounds -> zero fill */
+    memset(out, 0xFF, sizeof(out));
+    crt_fb_layer_fetch(&s, 99, out, 8);
+    for (int i = 0; i < 8; ++i) assert(out[i] == 0);
+
+    /* Null surface -> zero fill */
+    memset(out, 0xFF, sizeof(out));
+    crt_fb_layer_fetch(NULL, 0, out, 8);
+    for (int i = 0; i < 8; ++i) assert(out[i] == 0);
+
+    crt_fb_surface_deinit(&s);
+    printf("  layer fetch adapter: OK\n");
+}
+
 static void test_scanline_hook(void)
 {
     crt_fb_surface_t s;
@@ -175,6 +211,7 @@ int main(void)
     test_init_alloc_free();
     test_pixel_access();
     test_palette_grayscale();
+    test_layer_fetch_adapter();
     test_scanline_hook();
     printf("ALL PASSED\n");
     return 0;

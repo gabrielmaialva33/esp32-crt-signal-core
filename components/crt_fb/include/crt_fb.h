@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -61,6 +62,29 @@ void crt_fb_scanline_hook(const crt_scanline_t *scanline,
                           uint16_t *active_buf,
                           uint16_t active_width,
                           void *user_data);
+
+/**
+ * @brief Compose-layer fetch adapter.
+ *
+ * Emits one indexed-8 line into @p idx_out using nearest-neighbor scaling
+ * from the framebuffer width to the requested compose width. Lines outside
+ * the framebuffer height and null surfaces yield a zeroed row.
+ *
+ * Signature matches `crt_layer_fetch_fn` so the surface pointer can be
+ * passed directly as the layer context. The palette is not consulted here;
+ * the compositor handles palette mapping in its final pass.
+ *
+ * @param ctx          Pointer to a `crt_fb_surface_t`.
+ * @param logical_line Visible line index.
+ * @param idx_out      Destination scratch buffer.
+ * @param width        Pixels to emit.
+ * @return             Always true (this adapter is treated as always-present;
+ *                     out-of-bounds lines are emitted as a zero-filled row).
+ */
+bool crt_fb_layer_fetch(void *ctx,
+                        uint16_t logical_line,
+                        uint8_t *idx_out,
+                        uint16_t width);
 
 #ifdef __cplusplus
 }

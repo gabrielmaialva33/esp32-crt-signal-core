@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "esp_attr.h"
 #include "esp_check.h"
 
 #define CRT_FB_PALETTE_SIZE_INDEXED8  256
@@ -142,10 +143,10 @@ void crt_fb_palette_init_grayscale(crt_fb_surface_t *surface,
 
 /* ── Scanline hook ────────────────────────────────────────────────── */
 
-void crt_fb_scanline_hook(const crt_scanline_t *scanline,
-                          uint16_t *active_buf,
-                          uint16_t active_width,
-                          void *user_data)
+IRAM_ATTR void crt_fb_scanline_hook(const crt_scanline_t *scanline,
+                                    uint16_t *active_buf,
+                                    uint16_t active_width,
+                                    void *user_data)
 {
     const crt_fb_surface_t *surface = (const crt_fb_surface_t *)user_data;
 
@@ -179,4 +180,32 @@ void crt_fb_scanline_hook(const crt_scanline_t *scanline,
     if (i < active_width) {
         active_buf[i] = pal[row[acc >> 16]];
     }
+}
+
+/* ── Compose layer adapter ────────────────────────────────────────── */
+
+IRAM_ATTR bool crt_fb_layer_fetch(void *ctx,
+                                  uint16_t logical_line,
+                                  uint8_t *idx_out,
+                                  uint16_t width)
+{
+    const crt_fb_surface_t *surface = (const crt_fb_surface_t *)ctx;
+
+    if (idx_out == NULL || width == 0) {
+        return false;
+    }
+    if (surface == NULL || surface->buffer == NULL ||
+        logical_line >= surface->height || surface->width == 0) {
+        memset(idx_out, 0, width);
+        return true;
+    }
+
+    const uint8_t *row = &surface->buffer[(size_t)logical_line * surface->width];
+    uint32_t step = ((uint32_t)surface->width << 16) / width;
+    uint32_t acc = 0;
+    for (uint16_t x = 0; x < width; ++x) {
+        idx_out[x] = row[acc >> 16];
+        acc += step;
+    }
+    return true;
 }
