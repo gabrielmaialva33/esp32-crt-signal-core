@@ -2,6 +2,11 @@
 
 <img src="./.github/assets/readme-hero.svg" alt="CRT Signal Core - Deterministic Composite Video Engine for ESP32" width="100%"/>
 
+
+
+**Scanlines are the heartbeat. Sync is the contract. The signal never lies.**
+
+
 <p>
   <a href="https://docs.espressif.com/projects/esp-idf/"><img src="https://img.shields.io/badge/ESP--IDF-5.4%2B-ff4aa2?style=flat-square&labelColor=211826" alt="ESP-IDF 5.4+"/></a>
   <a href="https://en.wikipedia.org/wiki/C11_(C_standard_revision)"><img src="https://img.shields.io/badge/C11-embedded-27d7e8?style=flat-square&labelColor=211826" alt="C11 Embedded"/></a>
@@ -9,8 +14,6 @@
   <a href="./tests"><img src="https://img.shields.io/badge/tests-host%20checked-9d7cff?style=flat-square&labelColor=211826" alt="Tests host checked"/></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-27d7e8?style=flat-square&labelColor=211826" alt="License MIT"/></a>
 </p>
-
-**Scanlines are the heartbeat. Sync is the contract. The signal never lies.**
 
 ---
 
