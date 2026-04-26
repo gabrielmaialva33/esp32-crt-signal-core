@@ -76,3 +76,5 @@ compile_commands.json
 .superpowers/
 .playwright-mcp/
 .codex
+tmp
+/tools/captures/
