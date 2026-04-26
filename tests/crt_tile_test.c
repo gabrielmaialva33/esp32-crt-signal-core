@@ -8,11 +8,11 @@
  *     -o /tmp/crt_tile_test && /tmp/crt_tile_test
  */
 
+#include "crt_tile.h"
+
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
-
-#include "crt_tile.h"
 
 /* ── Shared palette + scanline helpers ────────────────────────────── */
 
@@ -31,7 +31,8 @@ static crt_scanline_t make_active_line(uint16_t logical)
     memset(&timing, 0, sizeof(timing));
     timing.total_lines = 262;
     timing.active_lines = 240;
-    return (crt_scanline_t) {
+    return (crt_scanline_t)
+    {
         .physical_line = (uint16_t)(logical + 20),
         .logical_line = logical,
         .type = CRT_LINE_ACTIVE,
@@ -78,7 +79,7 @@ static void test_init_validation(void)
     /* Happy path: 32x30 visible, 32x32 pitch (power of two) */
     uint8_t nt32[32 * 32] = {0};
     assert(crt_tile_init(&t, 32, 30, 32, 32, pattern, 1, nt32) == 0);
-    assert(t.pitch_w_mask == 31);  /* PoT -> mask set */
+    assert(t.pitch_w_mask == 31); /* PoT -> mask set */
     assert(t.pitch_h_mask == 31);
 
     /* Non-PoT pitch: masks stay zero, fallback modulo */
@@ -156,11 +157,16 @@ static void test_fetch_static_nametable(void)
      * Tile 2 fills pixels 16..23 (value 2)
      * Tile 3 fills pixels 24..31 (value 3)
      * Columns 4..31 are tile 0 -> pixel value 0 */
-    for (int i = 0; i < 8; ++i)  assert(out[i] == 0);
-    for (int i = 8; i < 16; ++i) assert(out[i] == 1);
-    for (int i = 16; i < 24; ++i) assert(out[i] == 2);
-    for (int i = 24; i < 32; ++i) assert(out[i] == 3);
-    for (int i = 32; i < 256; ++i) assert(out[i] == 0);
+    for (int i = 0; i < 8; ++i)
+        assert(out[i] == 0);
+    for (int i = 8; i < 16; ++i)
+        assert(out[i] == 1);
+    for (int i = 16; i < 24; ++i)
+        assert(out[i] == 2);
+    for (int i = 24; i < 32; ++i)
+        assert(out[i] == 3);
+    for (int i = 32; i < 256; ++i)
+        assert(out[i] == 0);
     printf("  fetch static nametable: OK\n");
 }
 
@@ -181,22 +187,28 @@ static void test_fetch_with_scroll_x(void)
     /* scroll_x = 0: tile 1 visible at pixels 0..7 */
     crt_tile_set_scroll(&t, 0, 0);
     crt_tile_layer_fetch(&t, 0, out, 256);
-    for (int i = 0; i < 8; ++i)  assert(out[i] == 1);
-    for (int i = 8; i < 16; ++i) assert(out[i] == 0);
+    for (int i = 0; i < 8; ++i)
+        assert(out[i] == 1);
+    for (int i = 8; i < 16; ++i)
+        assert(out[i] == 0);
 
     /* scroll_x = 3 shifts start so pixels 0..4 are the tail of tile 1 */
     crt_tile_set_scroll(&t, 3, 0);
     crt_tile_layer_fetch(&t, 0, out, 256);
-    for (int i = 0; i < 5; ++i)  assert(out[i] == 1);
-    for (int i = 5; i < 13; ++i) assert(out[i] == 0);
+    for (int i = 0; i < 5; ++i)
+        assert(out[i] == 1);
+    for (int i = 5; i < 13; ++i)
+        assert(out[i] == 0);
 
     /* scroll_x = 8 skips tile 1 from the start. Columns shown are
      * 1..31 (all tile 0) followed by a wraparound into column 0
      * (tile 1) at pixels 248..255. */
     crt_tile_set_scroll(&t, 8, 0);
     crt_tile_layer_fetch(&t, 0, out, 256);
-    for (int i = 0; i < 248; ++i) assert(out[i] == 0);
-    for (int i = 248; i < 256; ++i) assert(out[i] == 1);
+    for (int i = 0; i < 248; ++i)
+        assert(out[i] == 0);
+    for (int i = 248; i < 256; ++i)
+        assert(out[i] == 1);
     printf("  fetch with scroll_x: OK\n");
 }
 
@@ -219,16 +231,19 @@ static void test_fetch_with_scroll_y_crosses_tile(void)
 
     /* logical_line=7 without scroll: still row 0 -> tile 1 */
     crt_tile_layer_fetch(&t, 7, out, 256);
-    for (int i = 0; i < 256; ++i) assert(out[i] == 1);
+    for (int i = 0; i < 256; ++i)
+        assert(out[i] == 1);
 
     /* logical_line=8: row 1 -> tile 2 */
     crt_tile_layer_fetch(&t, 8, out, 256);
-    for (int i = 0; i < 256; ++i) assert(out[i] == 2);
+    for (int i = 0; i < 256; ++i)
+        assert(out[i] == 2);
 
     /* scroll_y=1: logical_line=7 becomes screen_y=8 -> tile 2 */
     crt_tile_set_scroll(&t, 0, 1);
     crt_tile_layer_fetch(&t, 7, out, 256);
-    for (int i = 0; i < 256; ++i) assert(out[i] == 2);
+    for (int i = 0; i < 256; ++i)
+        assert(out[i] == 2);
     printf("  fetch with scroll_y crosses tile: OK\n");
 }
 
@@ -255,9 +270,12 @@ static void test_scroll_wraparound(void)
     crt_tile_layer_fetch(&t, 0, out, 256);
     /* Columns 31, 0, 1, 2, ..., 30 are displayed. Column 0 is tile 1.
      * That column appears at pixels 8..15 (after column 31 at 0..7). */
-    for (int i = 0; i < 8; ++i)  assert(out[i] == 0);
-    for (int i = 8; i < 16; ++i) assert(out[i] == 1);
-    for (int i = 16; i < 256; ++i) assert(out[i] == 0);
+    for (int i = 0; i < 8; ++i)
+        assert(out[i] == 0);
+    for (int i = 8; i < 16; ++i)
+        assert(out[i] == 1);
+    for (int i = 16; i < 256; ++i)
+        assert(out[i] == 0);
     printf("  scroll wraparound: OK\n");
 }
 
@@ -285,19 +303,27 @@ static void test_fast_path_parity_with_fallback(void)
      * [48..71] = 2, [72..95] = 3, [96..119] = 0, ... */
     uint8_t buf_fast[768];
     assert(crt_tile_layer_fetch(&t, 0, buf_fast, 768) == true);
-    for (int i = 0;  i < 24;  ++i) assert(buf_fast[i] == 0);
-    for (int i = 24; i < 48;  ++i) assert(buf_fast[i] == 1);
-    for (int i = 48; i < 72;  ++i) assert(buf_fast[i] == 2);
-    for (int i = 72; i < 96;  ++i) assert(buf_fast[i] == 3);
+    for (int i = 0; i < 24; ++i)
+        assert(buf_fast[i] == 0);
+    for (int i = 24; i < 48; ++i)
+        assert(buf_fast[i] == 1);
+    for (int i = 48; i < 72; ++i)
+        assert(buf_fast[i] == 2);
+    for (int i = 72; i < 96; ++i)
+        assert(buf_fast[i] == 3);
 
     /* Fallback: width 512 -> exact 2:1. DAC[0..15] = 0, [16..31] = 1,
      * [32..47] = 2, [48..63] = 3. */
     uint8_t buf_fallback[512];
     assert(crt_tile_layer_fetch(&t, 0, buf_fallback, 512) == true);
-    for (int i = 0;  i < 16;  ++i) assert(buf_fallback[i] == 0);
-    for (int i = 16; i < 32;  ++i) assert(buf_fallback[i] == 1);
-    for (int i = 32; i < 48;  ++i) assert(buf_fallback[i] == 2);
-    for (int i = 48; i < 64;  ++i) assert(buf_fallback[i] == 3);
+    for (int i = 0; i < 16; ++i)
+        assert(buf_fallback[i] == 0);
+    for (int i = 16; i < 32; ++i)
+        assert(buf_fallback[i] == 1);
+    for (int i = 32; i < 48; ++i)
+        assert(buf_fallback[i] == 2);
+    for (int i = 48; i < 64; ++i)
+        assert(buf_fallback[i] == 3);
 
     printf("  fast path + fallback render identical content: OK\n");
 }
@@ -322,7 +348,7 @@ static void test_scanline_hook_parity_with_fetch(void)
         crt_tile_set_tile(&t, c, 2, (uint8_t)(c & 3));
     }
 
-    crt_scanline_t sc = make_active_line(17);  /* row 2, fine_y=1 */
+    crt_scanline_t sc = make_active_line(17); /* row 2, fine_y=1 */
 
     /* Fused hook path */
     uint16_t buf_hook[768];
@@ -330,7 +356,7 @@ static void test_scanline_hook_parity_with_fetch(void)
     crt_tile_scanline_hook(&sc, buf_hook, 768, &t);
 
     /* fetch + palette+swap (what compose generic path does) */
-    uint8_t line[256];  /* logical */
+    uint8_t line[256]; /* logical */
     crt_tile_layer_fetch(&t, 17, line, 256);
     uint16_t buf_fetch[768];
     memset(buf_fetch, 0, sizeof(buf_fetch));
@@ -340,7 +366,7 @@ static void test_scanline_hook_parity_with_fetch(void)
     for (int p = 0; p < 128; ++p) {
         uint16_t l0 = g_palette[line[p * 2]];
         uint16_t l1 = g_palette[line[p * 2 + 1]];
-        buf_fetch[p * 6    ] = l0;
+        buf_fetch[p * 6] = l0;
         buf_fetch[p * 6 + 1] = l0;
         buf_fetch[p * 6 + 2] = l1;
         buf_fetch[p * 6 + 3] = l0;
@@ -362,13 +388,33 @@ static void test_missing_palette_noop(void)
     crt_tile_init(&t, 32, 30, 32, 32, pattern, 1, nt);
     /* No palette set */
 
-    uint16_t buf[8] = { 0xBEEF, 0xBEEF, 0xBEEF, 0xBEEF,
-                        0xBEEF, 0xBEEF, 0xBEEF, 0xBEEF };
+    uint16_t buf[8] = {0xBEEF, 0xBEEF, 0xBEEF, 0xBEEF, 0xBEEF, 0xBEEF, 0xBEEF, 0xBEEF};
     crt_scanline_t sc = make_active_line(0);
     crt_tile_scanline_hook(&sc, buf, 8, &t);
 
-    for (int i = 0; i < 8; ++i) assert(buf[i] == 0xBEEF);
+    for (int i = 0; i < 8; ++i)
+        assert(buf[i] == 0xBEEF);
     printf("  missing palette is no-op: OK\n");
+}
+
+static void test_invalid_hook_inputs_noop(void) {
+    crt_tile_layer_t t;
+    uint8_t pattern[64] = {0};
+    uint8_t nt[32 * 32] = {0};
+    crt_tile_init(&t, 32, 30, 32, 32, pattern, 1, nt);
+    init_linear_palette();
+    crt_tile_set_palette(&t, g_palette);
+
+    uint16_t buf[4] = {0xBEEF, 0xBEEF, 0xBEEF, 0xBEEF};
+    crt_scanline_t sc = make_active_line(0);
+    crt_tile_scanline_hook(NULL, buf, 4, &t);
+    crt_tile_scanline_hook(&sc, NULL, 4, &t);
+    crt_tile_scanline_hook(&sc, buf, 0, &t);
+    crt_tile_scanline_hook(&sc, buf, 4, NULL);
+
+    for (int i = 0; i < 4; ++i)
+        assert(buf[i] == 0xBEEF);
+    printf("  invalid hook inputs are no-op: OK\n");
 }
 
 /* ── Main ─────────────────────────────────────────────────────────── */
@@ -386,6 +432,7 @@ int main(void)
     test_fast_path_parity_with_fallback();
     test_scanline_hook_parity_with_fetch();
     test_missing_palette_noop();
+    test_invalid_hook_inputs_noop();
     printf("ALL PASSED\n");
     return 0;
 }
