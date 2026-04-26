@@ -68,6 +68,15 @@ gcc -I components/crt_demo/include -I components/crt_timing/include \
     components/crt_core/crt_waveform.c -lm \
     -o /tmp/demo_test && /tmp/demo_test
 
+gcc -I components/crt_hal/include \
+    tests/crt_hal_clock_test.c components/crt_hal/crt_hal_clock.c \
+    -o /tmp/crt_hal_clock_test && /tmp/crt_hal_clock_test
+
+gcc -I components/crt_core/include -I components/crt_timing/include \
+    -I tests/stubs tests/crt_composite_palette_test.c \
+    components/crt_core/crt_composite_palette.c \
+    -o /tmp/crt_composite_palette_test && /tmp/crt_composite_palette_test
+
 gcc -I components/crt_core/include -I components/crt_timing/include \
     -I tests/stubs tests/crt_scanline_abi_test.c \
     -o /tmp/scanline_abi_test && /tmp/scanline_abi_test
@@ -79,6 +88,7 @@ gcc -I components/crt_core/include -I components/crt_timing/include \
 gcc -I components/crt_fb/include -I components/crt_core/include \
     -I components/crt_timing/include -I tests/stubs \
     tests/crt_fb_test.c components/crt_fb/crt_fb.c \
+    components/crt_core/crt_composite_palette.c \
     -o /tmp/crt_fb_test && /tmp/crt_fb_test
 
 gcc -I components/crt_compose/include -I components/crt_core/include \
@@ -101,6 +111,8 @@ python tools/img2fb.py <input_image> <output.h> <variable_name>
 - Changes under `components/crt_timing/`: run `crt_timing_profile_test`
 - Changes under `components/crt_core/crt_waveform.c`: run `burst_waveform_test` and `crt_demo_pattern_test`
 - Changes under `components/crt_core/crt_line_policy.c`: run `line_policy_test`
+- Changes under `components/crt_core/crt_composite_palette.c`: run `crt_composite_palette_test` and `crt_fb_test`
+- Changes under `components/crt_hal/crt_hal_clock.c`: run `crt_hal_clock_test` and `idf.py build`
 - Changes under `components/crt_core/include/crt_scanline.h` or hook ABI: run `crt_scanline_abi_test` and `crt_scanline_header_test`
 - Changes under `components/crt_fb/`: run `crt_fb_test`
 - Changes under `components/crt_compose/`: run `crt_compose_test`

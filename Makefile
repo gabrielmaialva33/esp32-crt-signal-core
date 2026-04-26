@@ -36,16 +36,18 @@ TEST_INC    := -I tests/stubs \
                -I components/crt_demo/include \
                -I components/crt_fb/include \
                -I components/crt_compose/include \
-               -I components/crt_tile/include
+               -I components/crt_tile/include \
+               -I components/crt_hal/include
 TEST_OUT    := /tmp
 
-.PHONY: test test-core test-render test-burst test-policy test-timing test-demo \
-        test-scanline-abi test-scanline-header test-fb test-compose test-tile
+.PHONY: test test-core test-render test-burst test-policy test-timing test-demo test-hal-clock \
+        test-composite-palette test-scanline-abi test-scanline-header test-fb test-compose \
+        test-tile
 
 test: test-core test-render  ## Run all host tests
 	@echo "\n✓ All tests passed"
 
-test-core: test-burst test-policy test-timing test-demo test-scanline-abi test-scanline-header  ## Run core host tests
+test-core: test-burst test-policy test-timing test-demo test-hal-clock test-composite-palette test-scanline-abi test-scanline-header  ## Run core host tests
 	@echo "\n✓ Core tests passed"
 
 test-render: test-fb test-compose test-tile  ## Run render adapter host tests
@@ -72,6 +74,16 @@ test-demo:
 		components/crt_core/crt_waveform.c -lm \
 		-o $(TEST_OUT)/demo_test && $(TEST_OUT)/demo_test
 
+test-hal-clock:
+	@$(TEST_CC) $(TEST_CFLAGS) $(TEST_INC) \
+		tests/crt_hal_clock_test.c components/crt_hal/crt_hal_clock.c \
+		-o $(TEST_OUT)/crt_hal_clock_test && $(TEST_OUT)/crt_hal_clock_test
+
+test-composite-palette:
+	@$(TEST_CC) $(TEST_CFLAGS) $(TEST_INC) \
+		tests/crt_composite_palette_test.c components/crt_core/crt_composite_palette.c \
+		-o $(TEST_OUT)/crt_composite_palette_test && $(TEST_OUT)/crt_composite_palette_test
+
 test-scanline-abi:
 	@$(TEST_CC) $(TEST_CFLAGS) $(TEST_INC) \
 		tests/crt_scanline_abi_test.c \
@@ -84,7 +96,7 @@ test-scanline-header:
 
 test-fb:
 	@$(TEST_CC) $(TEST_CFLAGS) $(TEST_INC) \
-		tests/crt_fb_test.c components/crt_fb/crt_fb.c \
+		tests/crt_fb_test.c components/crt_fb/crt_fb.c components/crt_core/crt_composite_palette.c \
 		-o $(TEST_OUT)/crt_fb_test && $(TEST_OUT)/crt_fb_test
 
 test-compose:
