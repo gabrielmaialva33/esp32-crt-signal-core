@@ -21,6 +21,24 @@ config CRT_ENABLE_COLOR
         Enables chroma burst generation and color demo output.
         Disable this to force monochrome output mode.
 
+choice CRT_RENDER_MODE
+    prompt "Demo render mode"
+    default CRT_RENDER_MODE_COMPOSE
+    help
+        Select the app_main rendering path used for on-device bring-up.
+
+config CRT_RENDER_MODE_COMPOSE
+    bool "Tile compositor with grayscale DAC palette"
+
+config CRT_RENDER_MODE_RGB332_FB
+    bool "Direct RGB332 framebuffer"
+    depends on CRT_ENABLE_COLOR
+    help
+        Uses the ESP_8_BIT-derived RGB332 composite color tables to render
+        a 256x240 framebuffer directly, bypassing the tile compositor.
+
+endchoice
+
 config CRT_ENABLE_UART_UPLOAD
     bool "Enable UART framebuffer upload"
     default n

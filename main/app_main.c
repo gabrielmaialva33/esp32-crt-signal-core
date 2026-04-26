@@ -27,6 +27,11 @@
 
 static const char *TAG = "app_main";
 static const bool k_enable_color = CONFIG_CRT_ENABLE_COLOR;
+#if CONFIG_CRT_RENDER_MODE_RGB332_FB
+static const bool k_use_rgb332_framebuffer = CONFIG_CRT_RENDER_MODE_RGB332_FB;
+#else
+static const bool k_use_rgb332_framebuffer = false;
+#endif
 static crt_fb_surface_t s_fb;
 static crt_compose_t s_compose;
 static crt_tile_layer_t s_tile;
@@ -61,7 +66,8 @@ static overlay_rect_t s_overlay_rect = {
 };
 
 IRAM_ATTR static bool overlay_rect_fetch(void *ctx, uint16_t logical_line, uint8_t *idx_out,
-                                         uint16_t width) {
+                                         uint16_t width)
+{
     const overlay_rect_t *r = (const overlay_rect_t *)ctx;
     if (logical_line < r->y0 || logical_line >= r->y1) {
         return false;
@@ -76,8 +82,24 @@ IRAM_ATTR static bool overlay_rect_fetch(void *ctx, uint16_t logical_line, uint8
 }
 
 #define APP_FB_WIDTH    256
+#define APP_FB_HEIGHT   240
 #define APP_BLANK_LEVEL ((uint16_t)(23U << 8))
 #define APP_WHITE_LEVEL ((uint16_t)(0x70U << 8)) /* ~44% DAC — tuned for C270 webcam capture */
+
+static void app_fill_rgb332_test_card(crt_fb_surface_t *fb)
+{
+    if (fb == NULL || fb->buffer == NULL || fb->width == 0 || fb->height == 0) {
+        return;
+    }
+
+    for (uint16_t y = 0; y < fb->height; ++y) {
+        uint8_t *row = crt_fb_row(fb, y);
+        uint8_t red = (uint8_t)(((uint32_t)y * 8U / fb->height) << 5);
+        for (uint16_t x = 0; x < fb->width; ++x) {
+            row[x] = (uint8_t)(red | ((uint32_t)x * 32U / fb->width));
+        }
+    }
+}
 
 /* ── Optional serial upload protocol ─────────────────────────────── */
 #if CONFIG_CRT_ENABLE_UART_UPLOAD
@@ -89,7 +111,8 @@ IRAM_ATTR static bool overlay_rect_fetch(void *ctx, uint16_t logical_line, uint8
 
 static int s_uart_fd = -1;
 
-static esp_err_t uart_upload_init(void) {
+static esp_err_t uart_upload_init(void)
+{
     if (s_uart_fd >= 0) {
         close(s_uart_fd);
         s_uart_fd = -1;
@@ -104,7 +127,8 @@ static esp_err_t uart_upload_init(void) {
     return ESP_OK;
 }
 
-static void uart_upload_check(crt_fb_surface_t *fb) {
+static void uart_upload_check(crt_fb_surface_t *fb)
+{
     uint8_t byte;
     static const uint8_t magic[] = UPLOAD_MAGIC;
 
@@ -125,13 +149,13 @@ static void uart_upload_check(crt_fb_surface_t *fb) {
         n = read(s_uart_fd, &rest[got], 3 - got);
         if (n <= 0)
             return;
-        got += (size_t) n;
+        got += (size_t)n;
     }
     if (rest[0] != magic[1] || rest[1] != magic[2] || rest[2] != magic[3]) {
         return;
     }
 
-    ESP_LOGI(TAG, "upload: magic received, expecting %u bytes...", (unsigned) fb->buffer_size);
+    ESP_LOGI(TAG, "upload: magic received, expecting %u bytes...", (unsigned)fb->buffer_size);
 
     /* Switch to blocking mode for bulk data transfer */
     int flags = fcntl(s_uart_fd, F_GETFL);
@@ -142,14 +166,14 @@ static void uart_upload_check(crt_fb_surface_t *fb) {
     while (received < fb->buffer_size) {
         n = read(s_uart_fd, &fb->buffer[received], fb->buffer_size - received);
         if (n <= 0) {
-            ESP_LOGE(TAG, "upload: read error at byte %u/%u (n=%d)", (unsigned) received,
-                     (unsigned) fb->buffer_size, n);
+            ESP_LOGE(TAG, "upload: read error at byte %u/%u (n=%d)", (unsigned)received,
+                     (unsigned)fb->buffer_size, n);
             byte = UPLOAD_NAK;
             write(s_uart_fd, &byte, 1);
             fcntl(s_uart_fd, F_SETFL, flags); /* restore non-blocking */
             return;
         }
-        received += (size_t) n;
+        received += (size_t)n;
     }
 
     /* Restore non-blocking mode */
@@ -157,11 +181,12 @@ static void uart_upload_check(crt_fb_surface_t *fb) {
 
     byte = UPLOAD_ACK;
     write(s_uart_fd, &byte, 1);
-    ESP_LOGI(TAG, "upload: %u bytes received, framebuffer updated!", (unsigned) received);
+    ESP_LOGI(TAG, "upload: %u bytes received, framebuffer updated!", (unsigned)received);
 }
 
 #if CONFIG_CRT_TEST_STANDARD_TOGGLE
-static void uart_upload_shutdown(void) {
+static void uart_upload_shutdown(void)
+{
     if (s_uart_fd >= 0) {
         close(s_uart_fd);
         s_uart_fd = -1;
@@ -174,9 +199,10 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
 {
     crt_core_config_t config = {
         .video_standard = video_standard,
-        .enable_color = k_enable_color,
-        .demo_pattern_mode =
-        k_enable_color ? CRT_DEMO_PATTERN_COLOR_BARS_RAMP : CRT_DEMO_PATTERN_LUMA_BARS,
+        .enable_color = k_enable_color || k_use_rgb332_framebuffer,
+        .demo_pattern_mode = (k_enable_color || k_use_rgb332_framebuffer)
+                                 ? CRT_DEMO_PATTERN_COLOR_BARS_RAMP
+                                 : CRT_DEMO_PATTERN_LUMA_BARS,
         .target_ready_depth = 32,
         .min_ready_depth = 0,
         .prep_task_core = 1,
@@ -188,33 +214,42 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
         return err;
     }
 
-    /* ── Tile layer as fused base + keyed overlay on top ──────────── */
-    {
-        /* Palette lives on the fb surface for reuse with the optional upload
-         * protocol; the fb itself is no longer registered as a compose layer. */
-        err = crt_fb_surface_init(&s_fb, APP_FB_WIDTH, 240, CRT_FB_FORMAT_INDEXED8);
-        if (err == ESP_OK) {
-            err = crt_fb_surface_alloc(&s_fb);
-        }
-        if (err == ESP_OK) {
-            crt_fb_palette_init_grayscale(&s_fb, APP_BLANK_LEVEL, APP_WHITE_LEVEL);
-            memcpy(s_fb.buffer, godzilla_pixels, s_fb.buffer_size);
-#if CONFIG_CRT_ENABLE_UART_UPLOAD
-            esp_err_t upload_err = uart_upload_init();
-            if (upload_err != ESP_OK) {
-                ESP_LOGW(TAG, "uart upload disabled: %s", esp_err_to_name(upload_err));
-            }
-#endif
+    err = crt_fb_surface_init(&s_fb, APP_FB_WIDTH, APP_FB_HEIGHT, CRT_FB_FORMAT_INDEXED8);
+    if (err == ESP_OK) {
+        err = crt_fb_surface_alloc(&s_fb);
+    }
+    if (err == ESP_OK) {
+        if (k_use_rgb332_framebuffer) {
+            app_fill_rgb332_test_card(&s_fb);
         } else {
-            ESP_LOGW(TAG, "fb alloc failed (used only for palette): %s", esp_err_to_name(err));
+            crt_fb_palette_init_grayscale(&s_fb, APP_BLANK_LEVEL, APP_WHITE_LEVEL);
+            if (s_fb.buffer_size <= sizeof(godzilla_pixels)) {
+                memcpy(s_fb.buffer, godzilla_pixels, s_fb.buffer_size);
+            }
         }
+#if CONFIG_CRT_ENABLE_UART_UPLOAD
+        esp_err_t upload_err = uart_upload_init();
+        if (upload_err != ESP_OK) {
+            ESP_LOGW(TAG, "uart upload disabled: %s", esp_err_to_name(upload_err));
+        }
+#endif
+    } else {
+        ESP_LOGE(TAG, "fb alloc failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    if (k_use_rgb332_framebuffer) {
+        crt_register_scanline_hook(crt_fb_rgb332_scanline_hook, &s_fb);
+        ESP_LOGI(TAG, "render: direct RGB332 framebuffer %ux%u", s_fb.width, s_fb.height);
+    } else {
+        /* ── Tile layer as fused base + keyed overlay on top ──────────── */
 
         /* Tile layer: 32x32 pitch (PoT), 32x30 visible. Pattern from
          * rodata (tile_demo.h); nametable filled in DRAM. */
         tile_demo_fill_nametable(s_tile_nametable, TILE_PITCH_W);
         esp_err_t tile_err =
-                crt_tile_init(&s_tile, TILE_VISIBLE_W, TILE_VISIBLE_H, TILE_PITCH_W, TILE_PITCH_H,
-                              tile_demo_patterns, TILE_DEMO_COUNT, s_tile_nametable);
+            crt_tile_init(&s_tile, TILE_VISIBLE_W, TILE_VISIBLE_H, TILE_PITCH_W, TILE_PITCH_H,
+                          tile_demo_patterns, TILE_DEMO_COUNT, s_tile_nametable);
         if (tile_err != ESP_OK) {
             ESP_LOGE(TAG, "crt_tile_init failed: %s", esp_err_to_name(tile_err));
             return tile_err;
@@ -242,15 +277,16 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
 
     ESP_LOGI(TAG, "ESP32 CRT signal core started: standard=%s color=%s pattern=%s",
              (video_standard == CRT_VIDEO_STANDARD_PAL) ? "PAL" : "NTSC",
-             k_enable_color ? "on" : "off",
-             (config.demo_pattern_mode == CRT_DEMO_PATTERN_COLOR_BARS_RAMP)
-                 ? "color_bars_ramp"
-                 : "luma_bars");
+             config.enable_color ? "on" : "off",
+             k_use_rgb332_framebuffer                                         ? "rgb332_fb"
+             : (config.demo_pattern_mode == CRT_DEMO_PATTERN_COLOR_BARS_RAMP) ? "color_bars_ramp"
+                                                                              : "luma_bars");
 
     return ESP_OK;
 }
 
-static void app_log_diag_snapshot(void) {
+static void app_log_diag_snapshot(void)
+{
     crt_diag_snapshot_t diag;
     crt_core_get_diag_snapshot(&diag);
     ESP_LOGI(TAG, "diag: underruns=%" PRIu32 " queue_min=%" PRIu32 " prep_max=%" PRIu32 " cycles",
@@ -258,7 +294,8 @@ static void app_log_diag_snapshot(void) {
 }
 
 #if !CONFIG_CRT_TEST_STANDARD_TOGGLE
-static void app_run_diag_loop(void) {
+static void app_run_diag_loop(void)
+{
     while (true) {
 #if CONFIG_CRT_ENABLE_UART_UPLOAD
         uart_upload_check(&s_fb);
@@ -270,9 +307,9 @@ static void app_run_diag_loop(void) {
         static uint32_t ticks_since_diag;
         ticks_since_diag +=
 #if CONFIG_CRT_ENABLE_UART_UPLOAD
-                10U;
+            10U;
 #else
-                5000U;
+            5000U;
 #endif
         if (ticks_since_diag >= 5000U) {
             ticks_since_diag = 0;
@@ -283,27 +320,30 @@ static void app_run_diag_loop(void) {
 #endif
 
 #if CONFIG_CRT_TEST_STANDARD_TOGGLE
-static void app_cleanup_core(void) {
+static void app_cleanup_core(void)
+{
 
 #if CONFIG_CRT_ENABLE_UART_UPLOAD
-uart_upload_shutdown();
+    uart_upload_shutdown();
 #endif
-crt_register_scanline_hook(NULL, NULL);
-crt_compose_clear_layers (&s_compose);
-crt_fb_surface_deinit (&s_fb);
+    crt_register_scanline_hook(NULL, NULL);
+    crt_compose_clear_layers(&s_compose);
+    crt_fb_surface_deinit(&s_fb);
 }
 
-static void app_run_standard_toggle_loop(crt_video_standard_t video_standard) {
+static void app_run_standard_toggle_loop(crt_video_standard_t video_standard)
+{
     while (true) {
         esp_err_t err;
 
 #if CONFIG_CRT_ENABLE_UART_UPLOAD
-uart_upload_check (&s_fb);
+        uart_upload_check(&s_fb);
 #endif
-vTaskDelay(pdMS_TO_TICKS((uint32_t)CONFIG_CRT_TEST_STANDARD_TOGGLE_INTERVAL_S * 1000U));
-video_standard= (video_standard== CRT_VIDEO_STANDARD_PAL) ? CRT_VIDEO_STANDARD_NTSC : CRT_VIDEO_STANDARD_PAL;
+        vTaskDelay(pdMS_TO_TICKS((uint32_t)CONFIG_CRT_TEST_STANDARD_TOGGLE_INTERVAL_S * 1000U));
+        video_standard = (video_standard == CRT_VIDEO_STANDARD_PAL) ? CRT_VIDEO_STANDARD_NTSC
+                                                                    : CRT_VIDEO_STANDARD_PAL;
 
-ESP_LOGI(TAG, "test toggle: switching standard to %s (interval=%" PRIu32 "s)",
+        ESP_LOGI(TAG, "test toggle: switching standard to %s (interval=%" PRIu32 "s)",
                  (video_standard == CRT_VIDEO_STANDARD_PAL) ? "PAL" : "NTSC",
                  (uint32_t)CONFIG_CRT_TEST_STANDARD_TOGGLE_INTERVAL_S);
 
@@ -313,9 +353,9 @@ ESP_LOGI(TAG, "test toggle: switching standard to %s (interval=%" PRIu32 "s)",
             break;
         }
 
-app_cleanup_core();
+        app_cleanup_core();
 
-err = crt_core_deinit();
+        err = crt_core_deinit();
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "crt_core_deinit failed during toggle: %s", esp_err_to_name(err));
             break;
@@ -327,12 +367,13 @@ err = crt_core_deinit();
 }
 #endif
 
-void app_main(void) {
+void app_main(void)
+{
     crt_video_standard_t video_standard =
 #if CONFIG_CRT_VIDEO_STANDARD_PAL
-            CRT_VIDEO_STANDARD_PAL;
+        CRT_VIDEO_STANDARD_PAL;
 #else
-            CRT_VIDEO_STANDARD_NTSC;
+        CRT_VIDEO_STANDARD_NTSC;
 #endif
 
     if (app_start_core(video_standard) != ESP_OK) {
