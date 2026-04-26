@@ -29,6 +29,12 @@
 > executed on a pinned core with zero allocations after init. If you can't finish
 > the line in time, you shed stages. You never lose sync.
 
+> [!NOTE]
+> **Research direction.** The project is also a physical-computing workbench:
+> deterministic composite output is the controllable stimulus layer for CRT
+> reservoir experiments, glitch dynamics, and vacuum/analog neuromorphic study.
+> See [`docs/research/tcbvn.md`](../docs/research/tcbvn.md).
+
 ---
 
 ## ⚡ Quick Start
@@ -311,8 +317,5 @@ make test-render
 
 <img src="assets/readme-footer.svg" alt="Built with phosphor persistence and scanline discipline." width="100%"/>
 
-*Built with phosphor persistence and scanline discipline.*
-
-<img src="https://img.shields.io/badge/made%20by-Maia-ff4aa2?style=flat-square&labelColor=211826" alt="Made by Maia"/>
-
 </div>
+
