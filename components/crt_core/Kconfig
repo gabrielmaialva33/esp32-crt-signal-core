@@ -54,6 +54,35 @@ config CRT_ENABLE_UART_UPLOAD
         by tools/crt_monitor. Keep this disabled for timing-stability runs
         because bulk UART transfers can contend with the realtime pipeline.
 
+config CRT_ENABLE_ECHOES_AUDIO
+    bool "Enable embedded demo audio PWM"
+    default n
+    help
+        Enables the embedded 8-bit PCM demo audio through LEDC PWM. Keep this
+        disabled for clean video captures unless the audio output is filtered
+        and routed away from GPIO25. A raw PWM carrier on GPIO26 can capacitively
+        couple into the DAC video output and create vertical stripe artifacts.
+
+config CRT_ECHOES_AUDIO_GPIO
+    int "Embedded demo audio PWM GPIO"
+    depends on CRT_ENABLE_ECHOES_AUDIO
+    range 0 33
+    default 18
+    help
+        GPIO used for LEDC PWM audio. Prefer a pin physically and electrically
+        away from GPIO25. Avoid GPIO26 for clean composite video; avoid flash
+        pins and input-only pins.
+
+config CRT_ECHOES_PWM_FREQ_HZ
+    int "Embedded demo audio PWM carrier frequency"
+    depends on CRT_ENABLE_ECHOES_AUDIO
+    range 20000 1000000
+    default 312500
+    help
+        LEDC PWM carrier for embedded PCM audio. This must be filtered before
+        amplification. Frequencies that alias into the visible scanline domain
+        can produce stable vertical interference patterns.
+
 config CRT_TEST_STANDARD_TOGGLE
     bool "Test mode: auto-toggle NTSC/PAL"
     default n
