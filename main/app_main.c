@@ -15,7 +15,9 @@
 #include "crt_core.h"
 #include "crt_compose.h"
 #include "crt_fb.h"
+#include "crt_tile.h"
 #include "godzilla_img.h"
+#include "tile_demo.h"
 #include "esp_adc/adc_oneshot.h"
 
 #define LIGHT_SENSOR_ADC_CHANNEL ADC_CHANNEL_6   /* GPIO34 */
@@ -25,6 +27,17 @@ static const char *TAG = "app_main";
 static const bool k_enable_color = CONFIG_CRT_ENABLE_COLOR;
 static crt_fb_surface_t s_fb;
 static crt_compose_t s_compose;
+static crt_tile_layer_t s_tile;
+
+/* Tile backend storage. Nametable is DRAM-resident (mutable at runtime);
+ * pattern_table lives in rodata via tile_demo.h. 32x32 pitch enables the
+ * AND-mask wraparound fast path; 32x30 visible matches NTSC/PAL active
+ * lines exactly so the compose hot path lands on the 256->768 expansion. */
+#define TILE_PITCH_W 32u
+#define TILE_PITCH_H 32u
+#define TILE_VISIBLE_W 32u
+#define TILE_VISIBLE_H 30u
+static uint8_t s_tile_nametable[TILE_PITCH_W * TILE_PITCH_H];
 
 /* Procedural overlay: solid rectangle drawn directly in active-width space.
  * Used as a second compositor layer to validate z-order + keyed transparency
@@ -229,41 +242,48 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
         return err;
     }
 
-    /* ── Framebuffer: Liskov substitute for demo pattern ──────────── */
+    /* ── Tile layer as fused base + keyed overlay on top ──────────── */
     {
-        crt_timing_profile_t timing;
-        crt_timing_get_profile(video_standard, &timing);
-
-        err = crt_fb_surface_init(&s_fb, APP_FB_WIDTH, timing.active_lines, CRT_FB_FORMAT_INDEXED8);
+        /* Palette lives on the fb surface for reuse with the upload
+         * protocol + historical drawing primitives; the fb itself is no
+         * longer registered as a compose layer. */
+        err = crt_fb_surface_init(&s_fb, APP_FB_WIDTH, 240, CRT_FB_FORMAT_INDEXED8);
         if (err == ESP_OK) { err = crt_fb_surface_alloc(&s_fb); }
         if (err == ESP_OK) {
             crt_fb_palette_init_grayscale(&s_fb, APP_BLANK_LEVEL, APP_WHITE_LEVEL);
-
-            /* Load image into framebuffer */
             memcpy(s_fb.buffer, godzilla_pixels, s_fb.buffer_size);
-
-            /* Compositor: layer 0 = fb (fused base, bit-exact with
-             * crt_fb_scanline_hook when no other layer contributes).
-             * Layer 1 = overlay rect (keyed, transparent_idx=0). Compose uses
-             * lazy materialization — 212/240 lines delegate directly to
-             * crt_fb_scanline_hook with zero extra cost. */
-            crt_compose_init(&s_compose);
-            crt_compose_set_palette(&s_compose, s_fb.palette, s_fb.palette_size);
-            crt_compose_add_layer_fused(&s_compose, crt_fb_layer_fetch,
-                                        crt_fb_scanline_hook, &s_fb);
-            crt_compose_add_layer(&s_compose, overlay_rect_fetch,
-                                  &s_overlay_rect, 0);
-
-            crt_register_scanline_hook(crt_compose_scanline_hook, &s_compose);
-            ESP_LOGI(TAG, "compose: fb %ux%u BG + overlay [%u,%u]-[%u,%u] "
-                     "(lazy materialization, %u/240 overlay lines)",
-                     s_fb.width, s_fb.height,
-                     s_overlay_rect.x0, s_overlay_rect.y0,
-                     s_overlay_rect.x1, s_overlay_rect.y1,
-                     (unsigned)(s_overlay_rect.y1 - s_overlay_rect.y0));
         } else {
-            ESP_LOGW(TAG, "framebuffer alloc failed, falling back to demo pattern");
+            ESP_LOGW(TAG, "fb alloc failed (used only for palette): %s", esp_err_to_name(err));
         }
+
+        /* Tile layer: 32x32 pitch (PoT), 32x30 visible. Pattern from
+         * rodata (tile_demo.h); nametable filled in DRAM. */
+        tile_demo_fill_nametable(s_tile_nametable, TILE_PITCH_W);
+        esp_err_t tile_err = crt_tile_init(&s_tile,
+                                           TILE_VISIBLE_W, TILE_VISIBLE_H,
+                                           TILE_PITCH_W, TILE_PITCH_H,
+                                           tile_demo_patterns, TILE_DEMO_COUNT,
+                                           s_tile_nametable);
+        if (tile_err != ESP_OK) {
+            ESP_LOGE(TAG, "crt_tile_init failed: %s", esp_err_to_name(tile_err));
+            return tile_err;
+        }
+        crt_tile_set_palette(&s_tile, s_fb.palette);
+
+        /* Compositor: tile as fused base, overlay as keyed layer 1. */
+        crt_compose_init(&s_compose);
+        crt_compose_set_palette(&s_compose, s_fb.palette, s_fb.palette_size);
+        crt_compose_add_layer_fused(&s_compose, crt_tile_layer_fetch,
+                                    crt_tile_scanline_hook, &s_tile);
+        crt_compose_add_layer(&s_compose, overlay_rect_fetch,
+                              &s_overlay_rect, 0);
+
+        crt_register_scanline_hook(crt_compose_scanline_hook, &s_compose);
+        ESP_LOGI(TAG,
+                 "compose: tile %ux%u visible (%ux%u pitch) + overlay [%u,%u]-[%u,%u]",
+                 TILE_VISIBLE_W, TILE_VISIBLE_H, TILE_PITCH_W, TILE_PITCH_H,
+                 s_overlay_rect.x0, s_overlay_rect.y0,
+                 s_overlay_rect.x1, s_overlay_rect.y1);
     }
 
     err = crt_core_start();
