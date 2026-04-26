@@ -9,6 +9,8 @@
  */
 
 #include "crt_compose.h"
+#include "crt_compose_layers.h"
+#include "crt_sprite.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -17,11 +19,21 @@
 /* ── Helpers ──────────────────────────────────────────────────────── */
 
 static uint16_t g_palette[256];
+static uint8_t g_sprite_atlas[256 * 32];
 
 static void init_linear_palette(void)
 {
     for (int i = 0; i < 256; ++i) {
         g_palette[i] = (uint16_t)(i << 8);
+    }
+}
+
+static void init_sprite_atlas(void) {
+    memset(g_sprite_atlas, 0, sizeof(g_sprite_atlas));
+    for (uint16_t y = 0; y < 32; ++y) {
+        for (uint16_t x = 0; x < 256; ++x) {
+            g_sprite_atlas[(y * 256U) + x] = (uint8_t)(1U + x + (y * 16U));
+        }
     }
 }
 
@@ -187,6 +199,37 @@ static void test_add_layer_limits(void)
     printf("  add/clear layers: OK\n");
 }
 
+static void test_layer_ids_and_info(void) {
+    crt_compose_t c;
+    crt_compose_init(&c);
+
+    uint8_t bg_id = CRT_COMPOSE_LAYER_INVALID;
+    uint8_t overlay_id = CRT_COMPOSE_LAYER_INVALID;
+    counting_ctx_t bg = {.calls = 0, .fill = 1};
+    counting_ctx_t overlay = {.calls = 0, .fill = 2};
+
+    assert(crt_compose_add_layer_with_id(&c, counting_fetch, &bg, CRT_COMPOSE_NO_TRANSPARENCY,
+                                         &bg_id) == 0);
+    assert(crt_compose_add_layer_with_id(&c, counting_fetch, &overlay, 0, &overlay_id) == 0);
+    assert(bg_id == 0);
+    assert(overlay_id == 1);
+
+    crt_compose_layer_info_t info;
+    assert(crt_compose_get_layer_info(&c, overlay_id, &info) == 0);
+    assert(info.fetch == counting_fetch);
+    assert(info.ctx == &overlay);
+    assert(info.transparent_idx == 0);
+    assert(info.enabled);
+    assert(info.scanline_override == NULL);
+
+    crt_compose_set_layer_enabled(&c, overlay_id, false);
+    assert(crt_compose_get_layer_info(&c, overlay_id, &info) == 0);
+    assert(!info.enabled);
+
+    assert(crt_compose_get_layer_info(&c, 99, &info) == ESP_ERR_INVALID_ARG);
+    printf("  layer ids + info: OK\n");
+}
+
 static void test_single_opaque_layer_with_swap(void)
 {
     crt_compose_t c;
@@ -341,6 +384,309 @@ static void test_keyed_absent_skips_merge(void)
     printf("  keyed absent fetch skips merge: OK\n");
 }
 
+static void test_layer_context_and_fetch_mutation(void) {
+    crt_compose_t c;
+    crt_compose_init(&c);
+    init_linear_palette();
+    crt_compose_set_palette(&c, g_palette, 256);
+
+    uint8_t layer_id = CRT_COMPOSE_LAYER_INVALID;
+    counting_ctx_t original = {.calls = 0, .fill = 10};
+    counting_ctx_t replacement = {.calls = 0, .fill = 44};
+    assert(crt_compose_add_layer_with_id(&c, counting_fetch, &original,
+                                         CRT_COMPOSE_NO_TRANSPARENCY, &layer_id) == 0);
+    assert(crt_compose_set_layer_context(&c, layer_id, &replacement) == 0);
+
+    uint16_t active_buf[4] = {0};
+    crt_scanline_t sc = make_active_line(0);
+    crt_compose_scanline_hook(&sc, active_buf, 4, &c);
+    assert(original.calls == 0);
+    assert(replacement.calls == 1);
+    assert(active_buf[0] == g_palette[44]);
+    assert(active_buf[1] == g_palette[44]);
+
+    counting_ctx_t second = {.calls = 0, .fill = 88};
+    assert(crt_compose_set_layer_fetch(&c, layer_id, counting_fetch, &second) == 0);
+    crt_compose_scanline_hook(&sc, active_buf, 4, &c);
+    assert(second.calls == 1);
+    assert(active_buf[0] == g_palette[88]);
+    assert(active_buf[1] == g_palette[88]);
+
+    assert(crt_compose_set_layer_fetch(&c, layer_id, NULL, &second) == ESP_ERR_INVALID_ARG);
+    assert(crt_compose_set_layer_context(&c, 99, &second) == ESP_ERR_INVALID_ARG);
+    printf("  layer context/fetch mutation: OK\n");
+}
+
+static void test_layer_transparency_mutation(void) {
+    crt_compose_t c;
+    crt_compose_init(&c);
+    init_linear_palette();
+    crt_compose_set_palette(&c, g_palette, 256);
+
+    counting_ctx_t bg = {.calls = 0, .fill = 50};
+    sprite_ctx_t spr = {.value = 99, .key = 0};
+    uint8_t overlay_id = CRT_COMPOSE_LAYER_INVALID;
+    crt_compose_add_layer(&c, counting_fetch, &bg, CRT_COMPOSE_NO_TRANSPARENCY);
+    crt_compose_add_layer_with_id(&c, sprite_fetch, &spr, 0, &overlay_id);
+
+    uint16_t active_buf[4] = {0};
+    crt_scanline_t sc = make_active_line(0);
+    crt_compose_scanline_hook(&sc, active_buf, 4, &c);
+    assert(active_buf[0] == g_palette[50]);
+    assert(active_buf[1] == g_palette[99]);
+
+    assert(crt_compose_set_layer_transparent_index(&c, overlay_id, 99) == 0);
+    crt_compose_scanline_hook(&sc, active_buf, 4, &c);
+    assert(active_buf[0] == g_palette[0]);
+    assert(active_buf[1] == g_palette[50]);
+
+    assert(crt_compose_set_layer_transparent_index(&c, 99, 0) == ESP_ERR_INVALID_ARG);
+    printf("  layer transparency mutation: OK\n");
+}
+
+static void test_builtin_solid_layer(void) {
+    crt_compose_t c;
+    crt_compose_init(&c);
+    init_linear_palette();
+    crt_compose_set_palette(&c, g_palette, 256);
+
+    crt_compose_solid_layer_t solid;
+    crt_compose_solid_layer_init(&solid, 12);
+    crt_compose_add_layer(&c, crt_compose_solid_layer_fetch, &solid,
+                          CRT_COMPOSE_NO_TRANSPARENCY);
+
+    uint16_t active_buf[4] = {0};
+    crt_scanline_t sc = make_active_line(0);
+    crt_compose_scanline_hook(&sc, active_buf, 4, &c);
+
+    assert(active_buf[0] == g_palette[12]);
+    assert(active_buf[1] == g_palette[12]);
+    assert(active_buf[2] == g_palette[12]);
+    assert(active_buf[3] == g_palette[12]);
+    printf("  builtin solid layer: OK\n");
+}
+
+static void test_builtin_rect_layer_overlay(void) {
+    crt_compose_t c;
+    crt_compose_init(&c);
+    init_linear_palette();
+    crt_compose_set_palette(&c, g_palette, 256);
+
+    crt_compose_solid_layer_t bg;
+    crt_compose_solid_layer_init(&bg, 10);
+    crt_compose_add_layer(&c, crt_compose_solid_layer_fetch, &bg, CRT_COMPOSE_NO_TRANSPARENCY);
+
+    crt_compose_rect_layer_t rect;
+    crt_compose_rect_layer_init(&rect, 1, 2, 2, 1, 77, 0);
+    crt_compose_add_layer(&c, crt_compose_rect_layer_fetch, &rect, 0);
+
+    uint16_t active_buf[4] = {0};
+    crt_scanline_t miss = make_active_line(1);
+    crt_compose_scanline_hook(&miss, active_buf, 4, &c);
+    assert(active_buf[0] == g_palette[10]);
+    assert(active_buf[1] == g_palette[10]);
+
+    crt_scanline_t hit = make_active_line(2);
+    crt_compose_scanline_hook(&hit, active_buf, 4, &c);
+    assert(active_buf[0] == g_palette[77]);
+    assert(active_buf[1] == g_palette[10]);
+    assert(active_buf[2] == g_palette[10]);
+    assert(active_buf[3] == g_palette[77]);
+
+    crt_compose_rect_layer_set_bounds(&rect, 0, 2, 4, 1);
+    crt_compose_rect_layer_set_fill(&rect, 88);
+    crt_compose_scanline_hook(&hit, active_buf, 4, &c);
+    assert(active_buf[0] == g_palette[88]);
+    assert(active_buf[1] == g_palette[88]);
+    assert(active_buf[2] == g_palette[88]);
+    assert(active_buf[3] == g_palette[88]);
+    printf("  builtin rect overlay: OK\n");
+}
+
+static void test_builtin_checker_layer(void) {
+    crt_compose_t c;
+    crt_compose_init(&c);
+    init_linear_palette();
+    crt_compose_set_palette(&c, g_palette, 256);
+
+    crt_compose_checker_layer_t checker;
+    crt_compose_checker_layer_init(&checker, 3, 4, 2, 1);
+    crt_compose_add_layer(&c, crt_compose_checker_layer_fetch, &checker,
+                          CRT_COMPOSE_NO_TRANSPARENCY);
+
+    uint16_t active_buf[4] = {0};
+    crt_scanline_t line0 = make_active_line(0);
+    crt_compose_scanline_hook(&line0, active_buf, 4, &c);
+    assert(active_buf[0] == g_palette[3]);
+    assert(active_buf[1] == g_palette[3]);
+    assert(active_buf[2] == g_palette[4]);
+    assert(active_buf[3] == g_palette[4]);
+
+    crt_scanline_t line1 = make_active_line(1);
+    crt_compose_scanline_hook(&line1, active_buf, 4, &c);
+    assert(active_buf[0] == g_palette[4]);
+    assert(active_buf[1] == g_palette[4]);
+    assert(active_buf[2] == g_palette[3]);
+    assert(active_buf[3] == g_palette[3]);
+    printf("  builtin checker layer: OK\n");
+}
+
+static void test_builtin_viewport_layer_scrolls_and_clips(void) {
+    crt_compose_t c;
+    crt_compose_init(&c);
+    init_linear_palette();
+    crt_compose_set_palette(&c, g_palette, 256);
+
+    crt_compose_solid_layer_t bg;
+    crt_compose_solid_layer_init(&bg, 1);
+    crt_compose_add_layer(&c, crt_compose_solid_layer_fetch, &bg, CRT_COMPOSE_NO_TRANSPARENCY);
+
+    pattern_ctx_t source = {.base = 10, .step = 16};
+    crt_compose_viewport_layer_t viewport;
+    crt_compose_viewport_layer_init(&viewport, pattern_fetch, &source, 4, 4, 0);
+    crt_compose_viewport_layer_set_viewport(&viewport, 1, 1, 3, 2);
+    crt_compose_viewport_layer_set_scroll(&viewport, 1, 0);
+    crt_compose_add_layer(&c, crt_compose_viewport_layer_fetch, &viewport, 0);
+
+    uint16_t active_buf[4] = {0};
+    crt_scanline_t outside = make_active_line(0);
+    crt_compose_scanline_hook(&outside, active_buf, 4, &c);
+    assert(active_buf[0] == g_palette[1]);
+    assert(active_buf[1] == g_palette[1]);
+    assert(active_buf[2] == g_palette[1]);
+    assert(active_buf[3] == g_palette[1]);
+
+    crt_scanline_t hit = make_active_line(1);
+    crt_compose_scanline_hook(&hit, active_buf, 4, &c);
+    /* Source line 0 is 10,11,12,13. Viewport starts at x=1 and scroll_x=1,
+     * so the composed indexed line is 1,11,12,13 before word swap. */
+    assert(active_buf[0] == g_palette[11]);
+    assert(active_buf[1] == g_palette[1]);
+    assert(active_buf[2] == g_palette[13]);
+    assert(active_buf[3] == g_palette[12]);
+
+    crt_compose_viewport_layer_set_scroll(&viewport, 0, 3);
+    crt_compose_scanline_hook(&hit, active_buf, 4, &c);
+    /* Vertical scroll wraps to source line 3: 58,59,60,61.
+     * Viewport writes first three samples into x=1..3. */
+    assert(active_buf[0] == g_palette[58]);
+    assert(active_buf[1] == g_palette[1]);
+    assert(active_buf[2] == g_palette[60]);
+    assert(active_buf[3] == g_palette[59]);
+
+    crt_compose_viewport_layer_scroll_by(&viewport, 1, 1);
+    crt_compose_scanline_hook(&hit, active_buf, 4, &c);
+    /* Scroll is now x=1,y=4; y wraps to source line 0 again. */
+    assert(active_buf[0] == g_palette[11]);
+    assert(active_buf[1] == g_palette[1]);
+    assert(active_buf[2] == g_palette[13]);
+    assert(active_buf[3] == g_palette[12]);
+    printf("  builtin viewport scroll/clip layer: OK\n");
+}
+
+static void test_sprite_atlas_and_basic_fetch(void) {
+    init_sprite_atlas();
+
+    crt_sprite_atlas_t atlas;
+    crt_sprite_layer_t sprites;
+    uint8_t sprite_id = CRT_SPRITE_INVALID_ID;
+
+    assert(crt_sprite_atlas_init(&atlas, g_sprite_atlas, 256, 32, 256) == 0);
+    assert(crt_sprite_layer_init(&sprites, &atlas, 0) == 0);
+    assert(crt_sprite_add(&sprites, 0, 0, CRT_SPRITE_SIZE_8X8, 1, 2, &sprite_id) == 0);
+    assert(sprite_id == 0);
+
+    /* Sprites with no Y match return false WITHOUT touching idx_out:
+     * compose contract forbids the caller from reading idx_out when the
+     * fetch returned false. Skipping the memset is what keeps the demo
+     * at 0 underruns. */
+    uint8_t line[12];
+    memset(line, 0xEE, sizeof(line));
+    assert(!crt_sprite_layer_fetch(&sprites, 1, line, 12));
+    for (uint8_t i = 0; i < 12; ++i) {
+        assert(line[i] == 0xEE);
+    }
+
+    memset(line, 0xEE, sizeof(line));
+    assert(crt_sprite_layer_fetch(&sprites, 2, line, 12));
+    assert(line[0] == 0);
+    assert(line[1] == 1);
+    assert(line[2] == 2);
+    assert(line[8] == 8);
+    assert(line[9] == 0);
+    assert(sprites.last_line_considered == 1);
+    assert(sprites.last_line_rendered == 1);
+    assert(sprites.last_line_overflow == 0);
+    printf("  sprite atlas + basic fetch: OK\n");
+}
+
+static void test_sprite_position_frame_size_and_scale(void) {
+    init_sprite_atlas();
+
+    crt_sprite_atlas_t atlas;
+    crt_sprite_layer_t sprites;
+    uint8_t sprite_id = CRT_SPRITE_INVALID_ID;
+    crt_sprite_t sprite;
+
+    crt_sprite_atlas_init(&atlas, g_sprite_atlas, 256, 32, 256);
+    crt_sprite_layer_init(&sprites, &atlas, 0);
+    crt_sprite_layer_set_x_scale(&sprites, 3);
+    assert(crt_sprite_add(&sprites, 1, 1, CRT_SPRITE_SIZE_16X16, 2, 4, &sprite_id) == 0);
+
+    assert(crt_sprite_set_position(&sprites, sprite_id, -1, 4) == 0);
+    assert(crt_sprite_move_by(&sprites, sprite_id, 2, 1) == 0);
+    assert(crt_sprite_set_frame(&sprites, sprite_id, 2) == 0);
+    assert(crt_sprite_get(&sprites, sprite_id, &sprite) == 0);
+    assert(sprite.x == 1);
+    assert(sprite.y == 5);
+    assert(sprite.cell_x == 2);
+    assert(sprite.cell_y == 1);
+    assert(sprite.size == CRT_SPRITE_SIZE_16X16);
+
+    uint8_t line[32] = {0};
+    assert(crt_sprite_layer_fetch(&sprites, 5, line, 32));
+    assert(line[0] == 0);
+    assert(line[3] == 145);
+    assert(line[4] == 145);
+    assert(line[5] == 145);
+    assert(line[6] == 146);
+
+    assert(crt_sprite_set_size(&sprites, sprite_id, CRT_SPRITE_SIZE_32X32) ==
+           ESP_ERR_INVALID_ARG);
+    assert(crt_sprite_set_enabled(&sprites, sprite_id, false) == 0);
+    assert(!crt_sprite_layer_fetch(&sprites, 5, line, 32));
+    printf("  sprite position/frame/size/scale: OK\n");
+}
+
+static void test_sprite_per_line_cap_and_overflow(void) {
+    init_sprite_atlas();
+
+    crt_sprite_atlas_t atlas;
+    crt_sprite_layer_t sprites;
+
+    crt_sprite_atlas_init(&atlas, g_sprite_atlas, 256, 32, 256);
+    crt_sprite_layer_init(&sprites, &atlas, 0);
+    crt_sprite_layer_set_max_sprites_per_line(&sprites, 2);
+
+    for (uint8_t i = 0; i < 4; ++i) {
+        uint8_t id = CRT_SPRITE_INVALID_ID;
+        assert(crt_sprite_add(&sprites, i, 0, CRT_SPRITE_SIZE_8X8, (int16_t)(i * 2), 0,
+                              &id) == 0);
+        assert(id == i);
+    }
+
+    uint8_t line[32] = {0};
+    assert(crt_sprite_layer_fetch(&sprites, 0, line, 32));
+    assert(sprites.last_line_considered == 4);
+    assert(sprites.last_line_rendered == 2);
+    assert(sprites.last_line_overflow == 2);
+    assert(sprites.overflow_count == 2);
+
+    crt_sprite_layer_reset_stats(&sprites);
+    assert(sprites.overflow_count == 0);
+    printf("  sprite per-line cap + overflow: OK\n");
+}
+
 static void test_opaque_base_skips_clear(void)
 {
     /* Ensure opaque layer 0 fully controls the line content regardless of
@@ -489,6 +835,39 @@ static void test_fused_vs_generic_parity(void)
     printf("  fused override parity with generic path: OK\n");
 }
 
+static void test_swap_layers_changes_priority(void) {
+    crt_compose_t c;
+    crt_compose_init(&c);
+    init_linear_palette();
+    crt_compose_set_palette(&c, g_palette, 256);
+
+    counting_ctx_t back = {.calls = 0, .fill = 10};
+    counting_ctx_t front = {.calls = 0, .fill = 20};
+    uint8_t back_id = CRT_COMPOSE_LAYER_INVALID;
+    uint8_t front_id = CRT_COMPOSE_LAYER_INVALID;
+
+    crt_compose_add_layer_with_id(&c, counting_fetch, &back, CRT_COMPOSE_NO_TRANSPARENCY,
+                                  &back_id);
+    crt_compose_add_layer_with_id(&c, counting_fetch, &front, CRT_COMPOSE_NO_TRANSPARENCY,
+                                  &front_id);
+
+    uint16_t active_buf[4] = {0};
+    crt_scanline_t sc = make_active_line(0);
+    crt_compose_scanline_hook(&sc, active_buf, 4, &c);
+    assert(active_buf[0] == g_palette[20]);
+    assert(active_buf[1] == g_palette[20]);
+
+    assert(crt_compose_swap_layers(&c, back_id, front_id) == 0);
+    crt_compose_scanline_hook(&sc, active_buf, 4, &c);
+    assert(active_buf[0] == g_palette[10]);
+    assert(active_buf[1] == g_palette[10]);
+
+    assert(crt_compose_swap_layers(&c, back_id, back_id) == 0);
+    assert(crt_compose_swap_layers(&c, 99, front_id) == ESP_ERR_INVALID_ARG);
+    assert(crt_compose_swap_layers(&c, back_id, 99) == ESP_ERR_INVALID_ARG);
+    printf("  layer priority swap: OK\n");
+}
+
 static void test_non_active_line_noop(void)
 {
     crt_compose_t c;
@@ -579,16 +958,27 @@ int main(void)
     printf("crt_compose test\n");
     test_init_and_palette();
     test_add_layer_limits();
+    test_layer_ids_and_info();
     test_single_opaque_layer_with_swap();
     test_odd_width_tail();
     test_transparent_overlay();
     test_disabled_layer_skipped();
     test_keyed_absent_skips_merge();
+    test_layer_context_and_fetch_mutation();
+    test_layer_transparency_mutation();
+    test_builtin_solid_layer();
+    test_builtin_rect_layer_overlay();
+    test_builtin_checker_layer();
+    test_builtin_viewport_layer_scrolls_and_clips();
+    test_sprite_atlas_and_basic_fetch();
+    test_sprite_position_frame_size_and_scale();
+    test_sprite_per_line_cap_and_overflow();
     test_opaque_base_skips_clear();
     test_fused_base_solo_delegates();
     test_fused_base_plus_absent_overlay_delegates();
     test_fused_base_plus_present_overlay_materializes();
     test_fused_vs_generic_parity();
+    test_swap_layers_changes_priority();
     test_non_active_line_noop();
     test_missing_palette_noop();
     test_width_overflow_guarded();
