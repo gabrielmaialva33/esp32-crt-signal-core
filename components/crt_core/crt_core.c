@@ -300,9 +300,15 @@ static esp_err_t crt_core_fill_slot(size_t slot_index, size_t recycled_queue_dep
 
     /* ── Frame boundary ───────────────────────────────────────────── */
     if (phys_line == 0) {
-        if (s_next_line_index > 0) {
+        /* s_next_line_index is wrapped to 0 BEFORE this check fires, so the
+         * old `> 0` guard never tripped. Use a started flag instead so the
+         * very first frame stays at s_frame_number=0 and subsequent frame
+         * boundaries actually advance the counter (and wake the frame hook). */
+        static bool s_frame_started = false;
+        if (s_frame_started) {
             s_frame_number++;
         }
+        s_frame_started = true;
         /* Snapshot hook pointer+data atomically */
         crt_frame_hook_fn frame_hook;
         void *frame_hook_data;
