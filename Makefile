@@ -33,16 +33,23 @@ TEST_CFLAGS ?= -Wall -Wextra -Wno-unused-function -std=c11 -g
 TEST_INC    := -I tests/stubs \
                -I components/crt_core/include \
                -I components/crt_timing/include \
-               -I components/crt_demo/include
+               -I components/crt_demo/include \
+               -I components/crt_fb/include \
+               -I components/crt_compose/include \
+               -I components/crt_tile/include
 TEST_OUT    := /tmp
 
-.PHONY: test test-burst test-policy test-timing test-demo
+.PHONY: test test-core test-render test-burst test-policy test-timing test-demo \
+        test-scanline-abi test-scanline-header test-fb test-compose test-tile
 
-test: test-burst test-policy test-timing test-demo  ## Run all host tests
+test: test-core test-render  ## Run all host tests
 	@echo "\n✓ All tests passed"
 
-test-safe: test-burst test-policy test-timing  ## Run passing host tests (skip known failures)
-	@echo "\n✓ Passing tests OK"
+test-core: test-burst test-policy test-timing test-demo test-scanline-abi test-scanline-header  ## Run core host tests
+	@echo "\n✓ Core tests passed"
+
+test-render: test-fb test-compose test-tile  ## Run render adapter host tests
+	@echo "\n✓ Render tests passed"
 
 test-burst:
 	@$(TEST_CC) $(TEST_CFLAGS) $(TEST_INC) \
@@ -64,6 +71,31 @@ test-demo:
 		tests/crt_demo_pattern_test.c components/crt_demo/crt_demo_pattern.c \
 		components/crt_core/crt_waveform.c -lm \
 		-o $(TEST_OUT)/demo_test && $(TEST_OUT)/demo_test
+
+test-scanline-abi:
+	@$(TEST_CC) $(TEST_CFLAGS) $(TEST_INC) \
+		tests/crt_scanline_abi_test.c \
+		-o $(TEST_OUT)/scanline_abi_test && $(TEST_OUT)/scanline_abi_test
+
+test-scanline-header:
+	@$(TEST_CC) $(TEST_CFLAGS) $(TEST_INC) \
+		tests/crt_scanline_header_test.c \
+		-o $(TEST_OUT)/scanline_header_test && $(TEST_OUT)/scanline_header_test
+
+test-fb:
+	@$(TEST_CC) $(TEST_CFLAGS) $(TEST_INC) \
+		tests/crt_fb_test.c components/crt_fb/crt_fb.c \
+		-o $(TEST_OUT)/crt_fb_test && $(TEST_OUT)/crt_fb_test
+
+test-compose:
+	@$(TEST_CC) $(TEST_CFLAGS) $(TEST_INC) \
+		tests/crt_compose_test.c components/crt_compose/crt_compose.c \
+		-o $(TEST_OUT)/crt_compose_test && $(TEST_OUT)/crt_compose_test
+
+test-tile:
+	@$(TEST_CC) $(TEST_CFLAGS) $(TEST_INC) \
+		tests/crt_tile_test.c components/crt_tile/crt_tile.c \
+		-o $(TEST_OUT)/crt_tile_test && $(TEST_OUT)/crt_tile_test
 
 # ── Lint ─────────────────────────────────────────────────────────────
 
