@@ -21,6 +21,14 @@ config CRT_ENABLE_COLOR
         Enables chroma burst generation and color demo output.
         Disable this to force monochrome output mode.
 
+config CRT_ENABLE_UART_UPLOAD
+    bool "Enable UART framebuffer upload"
+    default n
+    help
+        Enables the experimental UART0 raw framebuffer upload protocol used
+        by tools/crt_monitor. Keep this disabled for timing-stability runs
+        because bulk UART transfers can contend with the realtime pipeline.
+
 config CRT_TEST_STANDARD_TOGGLE
     bool "Test mode: auto-toggle NTSC/PAL"
     default n
