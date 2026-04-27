@@ -110,11 +110,21 @@ IRAM_ATTR static void fill_vertical_ramp(const crt_stimulus_t *stimulus, uint16_
 IRAM_ATTR static void fill_checker(const crt_stimulus_t *stimulus, uint16_t logical_line,
                                    uint8_t *idx_out, uint16_t width)
 {
+    /* Hoist the per-pixel divides: one div per scanline, then a running
+     * counter flips the column parity bit when it reaches cell_w. Cuts
+     * ~256 divides per active line (~3.7 M divides/s saved at NTSC). */
+    const uint16_t cell_w = stimulus->config.cell_w;
     const uint16_t row = logical_line / stimulus->config.cell_h;
+    const uint8_t lo = stimulus->config.low_idx;
+    const uint8_t hi = stimulus->config.high_idx;
+    uint8_t parity = (uint8_t)(row & 0x1U);
+    uint16_t cell_pixels = 0;
     for (uint16_t x = 0; x < width; ++x) {
-        const uint16_t col = x / stimulus->config.cell_w;
-        idx_out[x] =
-            (((row + col) & 0x1U) == 0) ? stimulus->config.low_idx : stimulus->config.high_idx;
+        idx_out[x] = (parity == 0U) ? lo : hi;
+        if (++cell_pixels >= cell_w) {
+            cell_pixels = 0;
+            parity ^= 1U;
+        }
     }
 }
 
