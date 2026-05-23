@@ -540,7 +540,7 @@ static void app_ir_xy_map(void)
     const int kGrid = 16;  /* 16x16 = 256 measurements */
     const int kProbeR = 6; /* small disc, smaller than ring radius */
     const int kSettleMs = 80;
-    const int kSampleN = 16;
+    const int kSampleN = 32; /* doubled from 16 → √2 noise reduction */
 
     gpio_set_direction(APP_IR_PIN, GPIO_MODE_INPUT);
     gpio_set_pull_mode(APP_IR_PIN, GPIO_PULLDOWN_ONLY);
@@ -701,7 +701,9 @@ static void app_ir_prbs_capture(void)
 {
     const int kTicks = 256;
     const int kSettleMs = 350; /* > 250ms phosphor tau → discriminated levels */
-    const int kSampleN = 8;
+    /* Heavy oversampling: 64 ADC reads averaged → ~8x noise SNR improvement
+     * via 1/√N over the previous N=8. Adds ~13 ms per tick (within settle). */
+    const int kSampleN = 64;
     /* 4 grayscale levels — well below saturation (max 192 / 255). Empirical:
      * with the ring on glass, level 192 gives ADC ~2400, level 64 gives
      * ~1500, level 0 gives ~80, so the dynamic range is preserved. */
