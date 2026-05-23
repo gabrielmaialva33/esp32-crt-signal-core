@@ -24,16 +24,16 @@
 ---
 
 > [!IMPORTANT]
-> **Signal-first architecture.** The scanline is the realtime unit, not the frame.
-> Every stage — sync, burst, active video — is a deterministic pipeline stage
-> executed on a pinned core with zero allocations after init. If you can't finish
-> the line in time, you shed stages. You never lose sync.
+> **Signal-first architecture.** The realtime unit is the scanline, not the
+> frame. Sync, burst, and active video each run as a pipeline stage on a pinned
+> core with zero allocations after init. If a line runs out of budget, you shed
+> optional stages — you never lose sync.
 
 > [!NOTE]
-> **Research direction.** The project is also a physical-computing workbench:
-> deterministic composite output is the controllable stimulus layer for CRT
-> reservoir experiments, glitch dynamics, and vacuum/analog neuromorphic study.
-> See [`docs/research/tcbvn.md`](../docs/research/tcbvn.md).
+> **Research direction.** This is also a physical-computing workbench. The
+> deterministic composite output doubles as the stimulus layer for CRT
+> reservoir experiments and analog/vacuum neuromorphic work. See
+> [`docs/research/tcbvn.md`](../docs/research/tcbvn.md).
 
 ---
 
@@ -54,7 +54,7 @@ void app_main(void)
 
     crt_core_init(&config);
     crt_core_start();
-    // GPIO25 is now outputting NTSC composite video via DAC
+    // GPIO25 now carries NTSC composite — feed it to a TV via DAC pin.
 }
 ```
 
@@ -116,26 +116,26 @@ flowchart LR
 
 ## 📦 Components
 
-| Component             | Role                                    | Key Constraint                   |
-|:----------------------|:----------------------------------------|:---------------------------------|
-| **`crt_core`**        | Engine — orchestrates the pipeline      | No alloc after `start()`         |
-| **`crt_hal`**         | I2S0 + DAC hardware abstraction         | GPIO25 only, internal SRAM DMA   |
-| **`crt_timing`**      | NTSC/PAL timing profiles                | µs-precise blanking/sync tables  |
-| **`crt_waveform`**    | Burst & chroma synthesis                | NTSC/PAL colorburst phase        |
-| **`crt_line_policy`** | Per-line type decisions                 | VBI, sync, active classification |
-| **`crt_demo`**        | Test pattern generator                  | Color bars, ramps, grids         |
-| **`crt_diag`**        | Runtime telemetry                       | Late line detection, ISR stats   |
-| **`crt_fb`**          | Indexed-8 / RGB332 framebuffer adapters | Hook-based active video source   |
-| **`crt_compose`**     | Indexed-8 scanline compositor           | Z-order + keyed transparency     |
-| **`crt_sprite`**      | Atlas-backed OAM sprite layer           | Per-scanline sprite cap          |
-| **`crt_stimulus`**    | Measurement stimulus layer              | Deterministic capture patterns   |
-| **`crt_tile`**        | PPU-style tilemap backend               | 8x8 patterns + fast expansion    |
+| Component                  | Role                                    | Key Constraint                   |
+|:---------------------------|:----------------------------------------|:---------------------------------|
+| **`crt_core`**             | Engine lifecycle + scanline pipeline    | No alloc after `start()`         |
+| └─ `crt_waveform`          | Burst & chroma synthesis                | NTSC/PAL colorburst phase        |
+| └─ `crt_line_policy`       | Per-line type decisions                 | VBI, sync, active classification |
+| **`crt_hal`**              | I2S0 + DAC hardware abstraction         | GPIO25 only, internal SRAM DMA   |
+| **`crt_timing`**           | NTSC/PAL timing profiles                | µs-precise blanking/sync tables  |
+| **`crt_demo`**             | Test pattern generator                  | Color bars, ramps, grids         |
+| **`crt_diag`**             | Runtime telemetry                       | Late line detection, ISR stats   |
+| **`crt_fb`**               | Indexed-8 / RGB332 framebuffer adapters | Hook-based active video source   |
+| **`crt_compose`**          | Indexed-8 scanline compositor           | Z-order + keyed transparency     |
+| └─ `crt_sprite`            | Atlas-backed OAM sprite layer           | Per-scanline sprite cap          |
+| **`crt_stimulus`**         | Measurement stimulus layer              | Deterministic capture patterns   |
+| **`crt_tile`**             | PPU-style tilemap backend               | 8x8 patterns + fast expansion    |
 
 ---
 
 ## 🔬 Signal Pipeline
 
-Each scanline passes through deterministic stages with a strict contract:
+Every scanline runs the same deterministic stages under the same contract:
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {
@@ -177,9 +177,9 @@ flowchart LR
 
 ## 🎛️ 8-bit Compositor
 
-`crt_compose` is the scanline compositor layer. It resolves indexed-8 layers
-back-to-front, applies keyed transparency, maps the final index line through a
-DAC palette, and emits I2S-swapped active-video samples.
+`crt_compose` resolves indexed-8 layers back-to-front per scanline, applies
+keyed transparency, maps the final index line through a DAC palette, and emits
+I2S-swapped active-video samples ready for DMA.
 
 ```c
 #include "crt_compose.h"
@@ -207,16 +207,15 @@ void setup_compositor(const uint16_t palette[256])
 }
 ```
 
-Built-in layer fetchers currently cover solid fills, rectangular overlays,
-checker patterns, and viewport/scroll adapters that can wrap any other layer
-fetcher. Framebuffer and tilemap adapters plug into the same stack. Layer IDs
-allow runtime visibility, context, transparency-key, and priority updates
-without rebuilding the compositor.
+Built-in fetchers: solid fills, rectangles, checker patterns, viewport/scroll
+adapters that wrap any other fetcher. Framebuffer and tilemap plug into the
+same stack. Layer IDs let you toggle visibility, swap context, change the
+transparency key, or reorder z without rebuilding the compositor.
 
-Sprites use a shared 8x8-cell atlas and render through one keyed
-`crt_sprite_layer_t`, not one `crt_compose` layer per sprite. The OAM layer has
-a deterministic `max_sprites_per_line` cap plus overflow counters, so sprite
-cost stays bounded and `crt_diag` underruns can remain at zero during bring-up.
+Sprites share a single 8x8-cell atlas and render through one keyed
+`crt_sprite_layer_t` — not one compose layer per sprite. The OAM layer enforces
+a `max_sprites_per_line` cap with overflow counters, so cost stays bounded and
+`crt_diag` underruns can stay at zero during bring-up.
 
 ---
 
@@ -262,16 +261,18 @@ esp32-crt-signal-core/
 │   ├── crt_compose/                        # Layer compositor
 │   ├── crt_stimulus/                       # Measurement stimulus patterns
 │   └── crt_tile/                           # Tilemap renderer
-├── tests/                                  # Host-compiled C tests
+├── tests/                                  # Host-compiled C tests (12 programs)
 │   ├── burst_waveform_test.c
-│   ├── crt_timing_profile_test.c
+│   ├── crt_compose_test.c
+│   ├── crt_composite_palette_test.c
 │   ├── crt_demo_pattern_test.c
+│   ├── crt_fb_test.c
+│   ├── crt_hal_clock_test.c
 │   ├── crt_scanline_abi_test.c
 │   ├── crt_scanline_header_test.c
-│   ├── crt_fb_test.c
-│   ├── crt_compose_test.c
-│   ├── crt_tile_test.c
 │   ├── crt_stimulus_test.c
+│   ├── crt_tile_test.c
+│   ├── crt_timing_profile_test.c
 │   └── line_policy_test.c
 ├── tools/
 │   ├── prc/                                # Physical Reservoir Computing pipeline
@@ -333,16 +334,15 @@ Configure these with `idf.py menuconfig`:
 | `CRT_TEST_STANDARD_TOGGLE`            | Alternates NTSC/PAL at runtime for testing    |
 | `CRT_TEST_STANDARD_TOGGLE_INTERVAL_S` | Seconds between standard switches             |
 
-`CRT_RENDER_MODE_RGB332_FB` enables a direct 256x240 RGB332 framebuffer path
-using ESP_8_BIT-derived composite color lookup tables. The default remains
-`CRT_RENDER_MODE_COMPOSE`, which exercises the tile/compositor pipeline. PAL
-timing and sync remain owned by this project; ESP_8_BIT_composite is used only
-as a reference for proven RGB332 DAC tables and APLL coefficients.
+`CRT_RENDER_MODE_RGB332_FB` enables a 256x240 RGB332 framebuffer path that
+reuses ESP_8_BIT's RGB332→composite lookup tables and APLL coefficients. PAL
+timing and sync stay owned by this project — ESP_8_BIT is only a reference for
+the DAC tables. Default is `CRT_RENDER_MODE_COMPOSE`, which exercises the
+tile/compositor pipeline.
 
 `CRT_RENDER_MODE_STIMULUS` runs `crt_stimulus` through `crt_compose` as a
-measurement layer. It emits deterministic ramps, checkerboards, PRBS, impulse,
-chirp, and frame-marker patterns intended for CRT/capture-card calibration and
-future physical reservoir experiments.
+measurement layer: deterministic ramps, checkerboards, PRBS, impulses, chirps,
+and frame markers for CRT/capture-card calibration and reservoir experiments.
 
 ### Running Tests (Host)
 
@@ -361,8 +361,8 @@ make test-render
 
 | Metric                 |           Value |
 |:-----------------------|----------------:|
-| **Host test programs** |               9 |
-| **Components**         |               8 |
+| **Host test programs** |              12 |
+| **Components**         |               9 |
 | **DMA channels**       | I2S0 continuous |
 | **DAC resolution**     |           8-bit |
 | **Output pin**         |          GPIO25 |
