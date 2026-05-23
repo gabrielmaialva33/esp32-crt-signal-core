@@ -292,8 +292,8 @@ static void uart_upload_shutdown(void)
 /* Optical centroid (in FB pixels) measured from the XY map gaussian fit.
  * Override here when the ring is repositioned. The indicator + decay + PRBS
  * disks all use this center so the IR LEDs land on top of the markers. */
-#define APP_RING_CENTER_X 135
-#define APP_RING_CENTER_Y 125
+#define APP_RING_CENTER_X 136
+#define APP_RING_CENTER_Y 122
 
 static inline void app_overlay_put(crt_fb_surface_t *fb, int x, int y, uint8_t idx)
 {
@@ -489,27 +489,27 @@ static void app_ir_ring_calibrate(void)
     /* CRT-coupled calibration: the IR ring is glued to the CRT face, so
      * the LEDs in the ring sit micrometers from the phosphor and act as
      * photodiodes when GPIO32 floats. We drive the whole framebuffer to
-     * pure white for 2 s (CLARO) then pure black for 2 s (ESCURO) and
+     * pure white for 2 s (LIGHT) then pure black for 2 s (DARK) and
      * record the ADC swing. */
     app_ir_ring_set(false);
 
     ESP_LOGI(TAG, "IR cal: CRT FULL WHITE, ring on glass — measuring 2 s...");
     app_fb_fill(&s_fb, 255);
     vTaskDelay(pdMS_TO_TICKS(500)); /* phosphor + ADC settle */
-    int claro_min, claro_max;
-    const int claro_mean = app_ir_capture_window(2000, &claro_min, &claro_max);
-    ESP_LOGI(TAG, "IR cal: CLARO  min=%4d max=%4d mean=%4d", claro_min, claro_max, claro_mean);
+    int light_min, light_max;
+    const int light_mean = app_ir_capture_window(2000, &light_min, &light_max);
+    ESP_LOGI(TAG, "IR cal: LIGHT min=%4d max=%4d mean=%4d", light_min, light_max, light_mean);
 
     ESP_LOGI(TAG, "IR cal: CRT FULL BLACK — measuring 2 s...");
     app_fb_fill(&s_fb, 0);
     vTaskDelay(pdMS_TO_TICKS(500));
-    int escuro_min, escuro_max;
-    const int escuro_mean = app_ir_capture_window(2000, &escuro_min, &escuro_max);
-    ESP_LOGI(TAG, "IR cal: ESCURO min=%4d max=%4d mean=%4d", escuro_min, escuro_max, escuro_mean);
+    int dark_min, dark_max;
+    const int dark_mean = app_ir_capture_window(2000, &dark_min, &dark_max);
+    ESP_LOGI(TAG, "IR cal: DARK  min=%4d max=%4d mean=%4d", dark_min, dark_max, dark_mean);
 
-    const int swing = claro_mean - escuro_mean;
+    const int swing = light_mean - dark_mean;
     const int abs_swing = (swing < 0) ? -swing : swing;
-    s_ir_baseline = (claro_mean + escuro_mean) / 2;
+    s_ir_baseline = (light_mean + dark_mean) / 2;
     s_ir_threshold = (abs_swing > 0) ? (abs_swing / 4) : 200;
     s_ir_hysteresis = (abs_swing > 0) ? (abs_swing / 8) : 80;
     ESP_LOGI(TAG, "IR cal: swing=%+d baseline=%d threshold=%d hyst=%d", swing, s_ir_baseline,
@@ -685,17 +685,17 @@ static void app_ir_area_sweep(void)
 /* Gray-level PRBS: a single central disk modulated between 4 amplitude
  * levels (0, 64, 128, 192). Each tick consumes 2 LFSR bits → 2 bits of
  * input information without saturating the ring's photo-coupling. The
- * non-linear pixel → fósforo → IR LED → ADC chain provides the kernel
+ * non-linear pixel → phosphor → IR LED → ADC chain provides the kernel
  * needed for reservoir computing beyond a pure linear filter. */
 static void app_ir_prbs_capture(void)
 {
     const int kTicks = 256;
-    const int kSettleMs = 50;
+    const int kSettleMs = 350; /* > 250ms phosphor tau → discriminated levels */
     const int kSampleN = 8;
     /* 4 grayscale levels — well below saturation (max 192 / 255). Empirical:
      * with the ring on glass, level 192 gives ADC ~2400, level 64 gives
      * ~1500, level 0 gives ~80, so the dynamic range is preserved. */
-    static const uint8_t kLevels[4] = {0, 64, 128, 192};
+    static const uint8_t kLevels[4] = {0, 16, 32, 48};
     uint32_t lfsr = 0xACE1u;
 
     /* Probe is intentionally TINY (~12 px elliptical) to keep the ring out
@@ -909,7 +909,7 @@ static void app_ir_ring_task(void *arg)
         }
 
         ESP_LOGI("ir_ring", "ADC=%4d d=%+5d %s ring=%s", v, delta,
-                 stable_light ? "[CLARO]" : "[ESCURO]", s_ir_ring_on ? "ON " : "OFF");
+                 stable_light ? "[LIGHT]" : "[DARK]", s_ir_ring_on ? "ON " : "OFF");
 
         vTaskDelay(pdMS_TO_TICKS(APP_IR_SAMPLE_MS));
     }
