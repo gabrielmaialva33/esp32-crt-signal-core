@@ -76,6 +76,18 @@ def kww_decay(t, A, tau, beta, B):
     return A * np.exp(-((t / tau) ** beta)) + B
 
 
+def logistic_decay(t, A, t0, k, B):
+    """Logistic (sigmoidal) decay: A / (1 + exp((t-t0)/k)) + B.
+
+    Captures delayed-onset decay (plateau then transition then asymptote).
+    Physically modelable system: IR-LED-as-photodiode integrating charge then
+    discharging once a threshold is crossed; or any RC-like circuit with a
+    saturation effect. On this CRT setup the response is dominated by sensor
+    dynamics, not phosphor — single-exp loses to logistic by ΔAICc > 2000.
+    """
+    return A / (1.0 + np.exp((t - t0) / k)) + B
+
+
 def aicc(n: int, k: int, ss_res: float) -> float:
     """Corrected Akaike Information Criterion (small-sample-friendly).
 
@@ -357,6 +369,32 @@ def fit_decay(decay: dict):
             )
         except Exception:
             pass
+        # Logistic (sigmoidal) decay — wins by ΔAICc > 2000 on the IR-ring +
+        # CRT setup because the sensor dynamics are NOT exponential.
+        try:
+            p0 = (A0, tau0, max(tau0 / 5, 1e-3), B0)
+            bounds = ((0, 1e-4, 1e-4, -np.inf), (np.inf, np.inf, np.inf, np.inf))
+            popt, pcov = curve_fit(logistic_decay, t, y, p0=p0, bounds=bounds, maxfev=10000)
+            y_pred = logistic_decay(t, *popt)
+            ss_res = float(np.sum((y - y_pred) ** 2))
+            r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
+            candidates.append(
+                {
+                    "model": "logistic",
+                    "params": {
+                        "A": popt[0],
+                        "t0": popt[1],
+                        "k": popt[2],
+                        "B": popt[3],
+                    },
+                    "err": dict(zip(("A", "t0", "k", "B"), np.sqrt(np.diag(pcov)), strict=True)),
+                    "r2": r2,
+                    "ss_res": ss_res,
+                    "aicc": aicc(n_samples, 4, ss_res),
+                }
+            )
+        except Exception:
+            pass
 
         if not candidates:
             fits.append({"trial": col, "error": "all model fits failed"})
@@ -468,6 +506,12 @@ def _summarize_best(best: dict) -> str:
             f"τ₂ = {p['tau2'] * 1000:.1f} ± {err['tau2'] * 1000:.1f} ms, "
             f"A₁/A₂ = {p['A1']:.0f}/{p['A2']:.0f}, R² = {best['r2']:.4f}"
         )
+    if best["model"] == "logistic":
+        return (
+            f"logistic: t₀ = {p['t0'] * 1000:.1f} ± {err['t0'] * 1000:.1f} ms, "
+            f"k = {p['k'] * 1000:.1f} ± {err['k'] * 1000:.1f} ms, "
+            f"A = {p['A']:.0f}, B = {p['B']:.0f}, R² = {best['r2']:.4f}"
+        )
     # kww
     return (
         f"kww: τ = {p['tau'] * 1000:.1f} ± {err['tau'] * 1000:.1f} ms, "
@@ -480,7 +524,7 @@ def report_decay(fit, lines):
     if fit is None:
         lines.append("  (no decay data)")
         return
-    model_taus = {"exp": [], "biexp": [], "kww": []}
+    model_times = {"exp": [], "biexp": [], "kww": [], "logistic": []}
     for f in fit["fits"]:
         if "error" in f:
             lines.append(f"  trial {f['trial']}: FAILED ({f['error']})")
@@ -489,27 +533,32 @@ def report_decay(fit, lines):
         aiccs = ", ".join(f"{c['model']}={c['aicc']:.1f}" for c in f["candidates"])
         lines.append(f"  trial {f['trial']}: WINNER={best['model']}  [AICc {aiccs}]")
         lines.append(f"    {_summarize_best(best)}")
-        # Track an "effective τ" per model for the across-trial summary.
+        # Track an "effective characteristic time" per model for cross-trial.
         if best["model"] == "exp":
-            model_taus["exp"].append(best["params"]["tau"])
+            model_times["exp"].append(best["params"]["tau"])
         elif best["model"] == "biexp":
-            # use slow component as the "effective" τ (dominates late decay)
-            model_taus["biexp"].append(best["params"]["tau2"])
+            model_times["biexp"].append(best["params"]["tau2"])
+        elif best["model"] == "logistic":
+            model_times["logistic"].append(best["params"]["t0"])
         else:
-            # KWW effective mean: τ_eff = (τ/β)·Γ(1/β); use SciPy gamma function
+            # KWW effective mean: τ_eff = (τ/β)·Γ(1/β)
             from math import gamma
 
             p = best["params"]
             tau_eff = (p["tau"] / p["beta"]) * gamma(1.0 / p["beta"])
-            model_taus["kww"].append(tau_eff)
-    # Across-trial summary for whichever model won most often
-    for model, taus in model_taus.items():
-        if not taus:
+            model_times["kww"].append(tau_eff)
+    labels = {
+        "exp": "τ",
+        "biexp": "τ₂ (slow)",
+        "kww": "τ_eff = (τ/β)·Γ(1/β)",
+        "logistic": "t₀ (inflection)",
+    }
+    for model, ts in model_times.items():
+        if not ts:
             continue
-        ms = [t * 1000 for t in taus]
-        label = {"exp": "τ", "biexp": "τ₂ (slow)", "kww": "τ_eff = (τ/β)·Γ(1/β)"}[model]
+        ms = [t * 1000 for t in ts]
         lines.append(
-            f"  ► {model} {label} across {len(ms)} trial(s): "
+            f"  ► {model} {labels[model]} across {len(ms)} trial(s): "
             f"{np.mean(ms):.2f} ± {np.std(ms):.2f} ms"
         )
 
