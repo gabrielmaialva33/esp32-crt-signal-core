@@ -377,6 +377,10 @@ static bool s_ir_ring_on = false;
 static int s_ir_baseline = 0;
 static int s_ir_threshold = 200;
 static int s_ir_hysteresis = 80;
+/* +1 when light_mean > dark_mean (forward-biased coupling), -1 if the photo-
+ * diode polarity is inverted. Multiplied into (v - baseline) so the LIGHT
+ * threshold fires regardless of orientation. */
+static int s_ir_polarity = 1;
 static app_ir_mode_t s_ir_mode = APP_IR_MODE_MONITOR; /* manual toggle below */
 
 static void app_ir_ring_set(bool on)
@@ -512,8 +516,14 @@ static void app_ir_ring_calibrate(void)
     s_ir_baseline = (light_mean + dark_mean) / 2;
     s_ir_threshold = (abs_swing > 0) ? (abs_swing / 4) : 200;
     s_ir_hysteresis = (abs_swing > 0) ? (abs_swing / 8) : 80;
-    ESP_LOGI(TAG, "IR cal: swing=%+d baseline=%d threshold=%d hyst=%d", swing, s_ir_baseline,
-             s_ir_threshold, s_ir_hysteresis);
+    s_ir_polarity = (swing >= 0) ? 1 : -1;
+    ESP_LOGI(TAG,
+             "IR cal: swing=%+d baseline=%d threshold=%d hyst=%d polarity=%+d",
+             swing,
+             s_ir_baseline,
+             s_ir_threshold,
+             s_ir_hysteresis,
+             s_ir_polarity);
     if (abs_swing < 30) {
         ESP_LOGW(TAG, "IR cal: |swing| < 30 LSB — ring may not be optically coupled to CRT");
     }
@@ -766,10 +776,13 @@ static void app_ir_prbs_capture(void)
  *    samples to keep the queue happy. */
 static void app_ir_decay_test(int trial_idx)
 {
-    const int kSamples = 256;
-    const uint32_t kPeriodUs = 5000;    /* 5 ms/sample → 1.28 s post-switch window */
-    const int kSwitchAt = kSamples / 4; /* 320 ms WHITE, 960 ms DECAY */
-    static int buf[256];
+    /* Sampling: 5 ms/sample × 1024 samples = 5.12 s total burst window.
+     * Pre-phase ≥ 1.28 s (≥ τ_phosphor) so steady-state amplitude is reliable.
+     * Post-phase ≥ 3.84 s lets biexp/KWW fits resolve the slow tail. */
+    const int kSamples = 1024;
+    const uint32_t kPeriodUs = 5000;    /* 5 ms/sample */
+    const int kSwitchAt = kSamples / 4; /* 1.28 s WHITE, 3.84 s DECAY */
+    static int buf[1024];
 
     const float radius_mm = APP_RING_OD_MM * 0.5f;
     const int cx = APP_RING_CENTER_X;
@@ -777,23 +790,27 @@ static void app_ir_decay_test(int trial_idx)
     const int rx = (int)(radius_mm * (float)s_fb.width / APP_CRT_VISIBLE_W_MM + 0.5f);
     const int ry = (int)(radius_mm * (float)s_fb.height / APP_CRT_VISIBLE_H_MM + 0.5f);
 
-    /* Phase 1: white disk steady-state */
+    /* Phase 1: white disk steady-state. Hold ≥ 3·τ_phosphor (~1.2 s × 3 ≈
+     * 3.6 s, rounded down to 2 s here + 1.28 s of pre-switch burst → ≥ 96%
+     * of asymptotic amplitude before the impulse off). */
     app_fb_fill(&s_fb, 0);
     app_fb_fill_ellipse(&s_fb, cx, cy, rx, ry, 255);
-    vTaskDelay(pdMS_TO_TICKS(80)); /* phosphor + IR-LED settle */
+    vTaskDelay(pdMS_TO_TICKS(2000));
 
     /* Pad in INPUT + pulldown for ADC reads (no drain inside the loop) */
     gpio_set_direction(APP_IR_PIN, GPIO_MODE_INPUT);
     gpio_set_pull_mode(APP_IR_PIN, GPIO_PULLDOWN_ONLY);
     esp_rom_delay_us(500);
 
-    /* Burst capture; flip FB to black mid-burst so the decay starts at
-     * a known sample index. */
+    /* Burst capture; flip FB to black BEFORE the switch sample so the first
+     * DECAY sample is purely post-impulse (avoids the off-by-one that
+     * inflated A and pulled τ longer in earlier runs). */
     for (int i = 0; i < kSamples; ++i) {
-        adc_oneshot_read(s_ir_adc, APP_IR_ADC_CHANNEL, &buf[i]);
         if (i == kSwitchAt) {
-            app_fb_fill(&s_fb, 0); /* impulse OFF */
+            app_fb_fill(&s_fb, 0); /* impulse OFF before sample read */
+            esp_rom_delay_us(50);  /* let DAC + phosphor leading edge settle */
         }
+        adc_oneshot_read(s_ir_adc, APP_IR_ADC_CHANNEL, &buf[i]);
         esp_rom_delay_us(kPeriodUs);
     }
 
@@ -887,7 +904,7 @@ static void app_ir_ring_task(void *arg)
     bool stable_light = false;
     while (true) {
         const int v = app_ir_ring_measure();
-        const int delta = v - s_ir_baseline;
+        const int delta = s_ir_polarity * (v - s_ir_baseline);
 
         if (!stable_light && delta > s_ir_threshold + s_ir_hysteresis) {
             stable_light = true;
