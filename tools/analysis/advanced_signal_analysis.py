@@ -14,17 +14,19 @@ Usage:
 """
 
 import argparse
-import cv2
-import numpy as np
 import sys
 from pathlib import Path
+
+import cv2
+import numpy as np
 
 HAS_MATPLOTLIB = False
 try:
     import matplotlib
-    matplotlib.use('Agg')  # headless
+
+    matplotlib.use("Agg")  # headless
     import matplotlib.pyplot as plt
-    from matplotlib.patches import Circle
+
     HAS_MATPLOTLIB = True
 except ImportError:
     pass
@@ -35,14 +37,42 @@ except ImportError:
 
 # NTSC 75% color bars — known chrominance phase angles (degrees, relative to burst)
 NTSC_75_BARS = [
-    {"name": "White",   "phase": None,   "ire": 77.0,  "rgb_75": (191, 191, 191), "i": 0.0,     "q": 0.0},
-    {"name": "Yellow",  "phase": 167.1,  "ire": 69.0,  "rgb_75": (191, 191,   0), "i": -0.3218, "q": -0.3118},
-    {"name": "Cyan",    "phase": 283.5,  "ire": 56.0,  "rgb_75": (  0, 191, 191), "i": -0.2739, "q":  0.3118},
-    {"name": "Green",   "phase": 240.7,  "ire": 48.0,  "rgb_75": (  0, 191,   0), "i": -0.5957, "q":  0.0000},
-    {"name": "Magenta", "phase": 60.7,   "ire": 36.0,  "rgb_75": (191,   0, 191), "i":  0.5957, "q":  0.0000},
-    {"name": "Red",     "phase": 103.5,  "ire": 28.0,  "rgb_75": (191,   0,   0), "i":  0.2739, "q": -0.3118},
-    {"name": "Blue",    "phase": 347.1,  "ire": 15.0,  "rgb_75": (  0,   0, 191), "i":  0.3218, "q":  0.3118},
-    {"name": "Black",   "phase": None,   "ire": 7.5,   "rgb_75": (  0,   0,   0), "i": 0.0,     "q": 0.0},
+    {"name": "White", "phase": None, "ire": 77.0, "rgb_75": (191, 191, 191), "i": 0.0, "q": 0.0},
+    {
+        "name": "Yellow",
+        "phase": 167.1,
+        "ire": 69.0,
+        "rgb_75": (191, 191, 0),
+        "i": -0.3218,
+        "q": -0.3118,
+    },
+    {
+        "name": "Cyan",
+        "phase": 283.5,
+        "ire": 56.0,
+        "rgb_75": (0, 191, 191),
+        "i": -0.2739,
+        "q": 0.3118,
+    },
+    {
+        "name": "Green",
+        "phase": 240.7,
+        "ire": 48.0,
+        "rgb_75": (0, 191, 0),
+        "i": -0.5957,
+        "q": 0.0000,
+    },
+    {
+        "name": "Magenta",
+        "phase": 60.7,
+        "ire": 36.0,
+        "rgb_75": (191, 0, 191),
+        "i": 0.5957,
+        "q": 0.0000,
+    },
+    {"name": "Red", "phase": 103.5, "ire": 28.0, "rgb_75": (191, 0, 0), "i": 0.2739, "q": -0.3118},
+    {"name": "Blue", "phase": 347.1, "ire": 15.0, "rgb_75": (0, 0, 191), "i": 0.3218, "q": 0.3118},
+    {"name": "Black", "phase": None, "ire": 7.5, "rgb_75": (0, 0, 0), "i": 0.0, "q": 0.0},
 ]
 
 
@@ -59,6 +89,7 @@ def bgr_to_yiq(img):
 # ---------------------------------------------------------------------------
 # 1. CHROMINANCE PHASE POLAR PLOT (requires matplotlib)
 # ---------------------------------------------------------------------------
+
 
 def plot_chrominance_polar(img, output_path, num_bars=8, margin_pct=0.15):
     """Polar plot of measured chrominance phase vs. NTSC reference.
@@ -78,9 +109,8 @@ def plot_chrominance_polar(img, output_path, num_bars=8, margin_pct=0.15):
 
     y, i_ch, q_ch = bgr_to_yiq(img)
 
-    fig, (ax_polar, ax_bar) = plt.subplots(1, 2, figsize=(16, 7),
-                                            subplot_kw={'projection': None})
-    ax_polar = fig.add_subplot(121, projection='polar')
+    fig, (ax_polar, ax_bar) = plt.subplots(1, 2, figsize=(16, 7), subplot_kw={"projection": None})
+    ax_polar = fig.add_subplot(121, projection="polar")
     ax_bar = fig.add_subplot(122)
 
     measured_phases = []
@@ -107,55 +137,75 @@ def plot_chrominance_polar(img, output_path, num_bars=8, margin_pct=0.15):
         names.append(bar["name"])
 
     # Polar plot
-    bar_colors = ['gray', '#C8C800', '#00C8C8', '#00C800', '#C800C8', '#C80000', '#0000C8', 'black']
-    for idx, (name, phase, amp, ref_ph) in enumerate(zip(names, measured_phases, measured_amps, ref_phases)):
+    bar_colors = ["gray", "#C8C800", "#00C8C8", "#00C800", "#C800C8", "#C80000", "#0000C8", "black"]
+    for idx, (name, phase, amp, ref_ph) in enumerate(
+        zip(names, measured_phases, measured_amps, ref_phases, strict=False)
+    ):
         if ref_ph is not None and amp > 0.01:
             # Measured
-            ax_polar.plot(np.radians(phase), amp, 'o', markersize=10,
-                         color=bar_colors[idx], label=f"{name} ({phase:.1f}deg)")
+            ax_polar.plot(
+                np.radians(phase),
+                amp,
+                "o",
+                markersize=10,
+                color=bar_colors[idx],
+                label=f"{name} ({phase:.1f}deg)",
+            )
             # Reference
-            ref_amp = np.sqrt(NTSC_75_BARS[idx]["i"]**2 + NTSC_75_BARS[idx]["q"]**2)
-            ax_polar.plot(np.radians(ref_ph), ref_amp, 'x', markersize=12,
-                         color=bar_colors[idx], markeredgewidth=2)
+            ref_amp = np.sqrt(NTSC_75_BARS[idx]["i"] ** 2 + NTSC_75_BARS[idx]["q"] ** 2)
+            ax_polar.plot(
+                np.radians(ref_ph),
+                ref_amp,
+                "x",
+                markersize=12,
+                color=bar_colors[idx],
+                markeredgewidth=2,
+            )
             # Error arc
-            ax_polar.annotate('', xy=(np.radians(phase), amp),
-                            xytext=(np.radians(ref_ph), ref_amp),
-                            arrowprops=dict(arrowstyle='->', color='red', lw=0.8))
+            ax_polar.annotate(
+                "",
+                xy=(np.radians(phase), amp),
+                xytext=(np.radians(ref_ph), ref_amp),
+                arrowprops=dict(arrowstyle="->", color="red", lw=0.8),
+            )
 
     ax_polar.set_title("Chrominance Phase (o=measured, x=reference)", pad=20)
-    ax_polar.legend(loc='upper right', bbox_to_anchor=(1.3, 1.0), fontsize=8)
+    ax_polar.legend(loc="upper right", bbox_to_anchor=(1.3, 1.0), fontsize=8)
 
     # Bar chart of phase errors
     errors = []
     error_names = []
-    for idx, (name, phase, ref_ph) in enumerate(zip(names, measured_phases, ref_phases)):
+    for idx, (name, phase, ref_ph) in enumerate(
+        zip(names, measured_phases, ref_phases, strict=False)
+    ):
         if ref_ph is not None and measured_amps[idx] > 0.01:
             err = (phase - ref_ph + 180) % 360 - 180
             errors.append(err)
             error_names.append(name)
 
     if errors:
-        colors_err = ['green' if abs(e) < 10 else 'orange' if abs(e) < 20 else 'red' for e in errors]
+        colors_err = [
+            "green" if abs(e) < 10 else "orange" if abs(e) < 20 else "red" for e in errors
+        ]
         ax_bar.barh(error_names, errors, color=colors_err)
-        ax_bar.axvline(x=0, color='white', linewidth=0.5)
-        ax_bar.axvline(x=10, color='yellow', linewidth=0.5, linestyle='--')
-        ax_bar.axvline(x=-10, color='yellow', linewidth=0.5, linestyle='--')
+        ax_bar.axvline(x=0, color="white", linewidth=0.5)
+        ax_bar.axvline(x=10, color="yellow", linewidth=0.5, linestyle="--")
+        ax_bar.axvline(x=-10, color="yellow", linewidth=0.5, linestyle="--")
         ax_bar.set_xlabel("Phase Error (degrees)")
         ax_bar.set_title("Chrominance Phase Error vs. NTSC Reference")
-        ax_bar.set_facecolor('#1a1a1a')
+        ax_bar.set_facecolor("#1a1a1a")
 
-    fig.patch.set_facecolor('#0d0d0d')
-    ax_polar.set_facecolor('#1a1a1a')
-    ax_polar.tick_params(colors='white')
-    ax_polar.xaxis.label.set_color('white')
-    ax_bar.tick_params(colors='white')
-    ax_bar.xaxis.label.set_color('white')
-    ax_bar.title.set_color('white')
-    ax_polar.title.set_color('white')
+    fig.patch.set_facecolor("#0d0d0d")
+    ax_polar.set_facecolor("#1a1a1a")
+    ax_polar.tick_params(colors="white")
+    ax_polar.xaxis.label.set_color("white")
+    ax_bar.tick_params(colors="white")
+    ax_bar.xaxis.label.set_color("white")
+    ax_bar.title.set_color("white")
+    ax_polar.title.set_color("white")
 
     plt.tight_layout()
-    plt.savefig(str(output_path), dpi=150, bbox_inches='tight',
-                facecolor=fig.get_facecolor())
+    plt.savefig(str(output_path), dpi=150, bbox_inches="tight", facecolor=fig.get_facecolor())
     plt.close()
     print(f"  -> {output_path}")
 
@@ -163,6 +213,7 @@ def plot_chrominance_polar(img, output_path, num_bars=8, margin_pct=0.15):
 # ---------------------------------------------------------------------------
 # 2. LUMA STAIRCASE ANALYSIS
 # ---------------------------------------------------------------------------
+
 
 def plot_luma_staircase(img, output_path, num_bars=8):
     """Plot horizontal luma profile showing the staircase pattern.
@@ -189,43 +240,55 @@ def plot_luma_staircase(img, output_path, num_bars=8):
     bar_width = w / num_bars
     ref_ires = [bar["ire"] for bar in NTSC_75_BARS]
 
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 8), gridspec_kw={'height_ratios': [3, 1]})
-    fig.patch.set_facecolor('#0d0d0d')
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 8), gridspec_kw={"height_ratios": [3, 1]})
+    fig.patch.set_facecolor("#0d0d0d")
 
     # Profile
     x = np.arange(len(profile))
-    ax1.plot(x, ire_profile, color='#00ff00', linewidth=0.8, label='Measured')
+    ax1.plot(x, ire_profile, color="#00ff00", linewidth=0.8, label="Measured")
 
     # Reference
     for idx, ref_ire in enumerate(ref_ires):
         x_start = int(idx * bar_width)
         x_end = int((idx + 1) * bar_width)
-        ax1.hlines(ref_ire, x_start, x_end, colors='#ff4444', linewidths=1.5,
-                   linestyles='--', label='Reference' if idx == 0 else None)
-        ax1.text((x_start + x_end) / 2, ref_ire + 2,
-                 NTSC_75_BARS[idx]["name"], ha='center', fontsize=8, color='#ff4444')
+        ax1.hlines(
+            ref_ire,
+            x_start,
+            x_end,
+            colors="#ff4444",
+            linewidths=1.5,
+            linestyles="--",
+            label="Reference" if idx == 0 else None,
+        )
+        ax1.text(
+            (x_start + x_end) / 2,
+            ref_ire + 2,
+            NTSC_75_BARS[idx]["name"],
+            ha="center",
+            fontsize=8,
+            color="#ff4444",
+        )
 
-    ax1.set_ylabel("Approximate IRE", color='white')
-    ax1.set_title("Luma Staircase — Horizontal Profile", color='white')
-    ax1.set_facecolor('#1a1a1a')
-    ax1.tick_params(colors='white')
-    ax1.legend(facecolor='#2a2a2a', edgecolor='white', labelcolor='white')
+    ax1.set_ylabel("Approximate IRE", color="white")
+    ax1.set_title("Luma Staircase — Horizontal Profile", color="white")
+    ax1.set_facecolor("#1a1a1a")
+    ax1.tick_params(colors="white")
+    ax1.legend(facecolor="#2a2a2a", edgecolor="white", labelcolor="white")
     ax1.set_ylim(0, 110)
-    ax1.axhline(y=7.5, color='#666666', linewidth=0.5, linestyle=':')
-    ax1.axhline(y=100, color='#666666', linewidth=0.5, linestyle=':')
+    ax1.axhline(y=7.5, color="#666666", linewidth=0.5, linestyle=":")
+    ax1.axhline(y=100, color="#666666", linewidth=0.5, linestyle=":")
 
     # Derivative (shows transitions)
     gradient = np.gradient(ire_profile)
-    ax2.plot(x, gradient, color='#ffaa00', linewidth=0.5)
-    ax2.set_ylabel("dIRE/dx", color='white')
-    ax2.set_xlabel("Pixel X", color='white')
-    ax2.set_title("Transition Gradient (spikes = bar edges)", color='white')
-    ax2.set_facecolor('#1a1a1a')
-    ax2.tick_params(colors='white')
+    ax2.plot(x, gradient, color="#ffaa00", linewidth=0.5)
+    ax2.set_ylabel("dIRE/dx", color="white")
+    ax2.set_xlabel("Pixel X", color="white")
+    ax2.set_title("Transition Gradient (spikes = bar edges)", color="white")
+    ax2.set_facecolor("#1a1a1a")
+    ax2.tick_params(colors="white")
 
     plt.tight_layout()
-    plt.savefig(str(output_path), dpi=150, bbox_inches='tight',
-                facecolor=fig.get_facecolor())
+    plt.savefig(str(output_path), dpi=150, bbox_inches="tight", facecolor=fig.get_facecolor())
     plt.close()
     print(f"  -> {output_path}")
 
@@ -233,6 +296,7 @@ def plot_luma_staircase(img, output_path, num_bars=8):
 # ---------------------------------------------------------------------------
 # 3. FREQUENCY SPECTRUM (1D horizontal) — look for subcarrier artifacts
 # ---------------------------------------------------------------------------
+
 
 def plot_horizontal_spectrum(img, output_path, line_y=None):
     """1D FFT of a horizontal line — can reveal subcarrier-related patterns.
@@ -266,39 +330,38 @@ def plot_horizontal_spectrum(img, output_path, line_y=None):
     freqs = np.fft.rfftfreq(len(line))  # in cycles/pixel
 
     fig, axes = plt.subplots(3, 1, figsize=(14, 10))
-    fig.patch.set_facecolor('#0d0d0d')
+    fig.patch.set_facecolor("#0d0d0d")
 
     # Line profile
-    axes[0].plot(line, color='#00ff00', linewidth=0.8)
-    axes[0].set_title(f"Horizontal Line Profile (y={line_y})", color='white')
-    axes[0].set_ylabel("Pixel Value", color='white')
-    axes[0].set_facecolor('#1a1a1a')
-    axes[0].tick_params(colors='white')
+    axes[0].plot(line, color="#00ff00", linewidth=0.8)
+    axes[0].set_title(f"Horizontal Line Profile (y={line_y})", color="white")
+    axes[0].set_ylabel("Pixel Value", color="white")
+    axes[0].set_facecolor("#1a1a1a")
+    axes[0].tick_params(colors="white")
 
     # Magnitude spectrum (linear)
-    axes[1].plot(freqs[1:], magnitude[1:], color='#00aaff', linewidth=0.8)
-    axes[1].set_title("FFT Magnitude Spectrum (linear)", color='white')
-    axes[1].set_ylabel("Magnitude", color='white')
-    axes[1].set_facecolor('#1a1a1a')
-    axes[1].tick_params(colors='white')
+    axes[1].plot(freqs[1:], magnitude[1:], color="#00aaff", linewidth=0.8)
+    axes[1].set_title("FFT Magnitude Spectrum (linear)", color="white")
+    axes[1].set_ylabel("Magnitude", color="white")
+    axes[1].set_facecolor("#1a1a1a")
+    axes[1].tick_params(colors="white")
 
     # Magnitude spectrum (log dB)
     db = 20 * np.log10(magnitude[1:] + 1e-10)
-    axes[2].plot(freqs[1:], db, color='#ff6600', linewidth=0.8)
-    axes[2].set_title("FFT Magnitude Spectrum (dB)", color='white')
-    axes[2].set_xlabel("Frequency (cycles/pixel)", color='white')
-    axes[2].set_ylabel("dB", color='white')
-    axes[2].set_facecolor('#1a1a1a')
-    axes[2].tick_params(colors='white')
+    axes[2].plot(freqs[1:], db, color="#ff6600", linewidth=0.8)
+    axes[2].set_title("FFT Magnitude Spectrum (dB)", color="white")
+    axes[2].set_xlabel("Frequency (cycles/pixel)", color="white")
+    axes[2].set_ylabel("dB", color="white")
+    axes[2].set_facecolor("#1a1a1a")
+    axes[2].tick_params(colors="white")
 
     # Mark some interesting frequencies
     # Nyquist is at 0.5 cycles/pixel
-    axes[2].axvline(x=0.25, color='yellow', linewidth=0.5, linestyle='--', alpha=0.5)
-    axes[2].text(0.25, db.max() * 0.9, "1/4 Nyq", fontsize=8, color='yellow')
+    axes[2].axvline(x=0.25, color="yellow", linewidth=0.5, linestyle="--", alpha=0.5)
+    axes[2].text(0.25, db.max() * 0.9, "1/4 Nyq", fontsize=8, color="yellow")
 
     plt.tight_layout()
-    plt.savefig(str(output_path), dpi=150, bbox_inches='tight',
-                facecolor=fig.get_facecolor())
+    plt.savefig(str(output_path), dpi=150, bbox_inches="tight", facecolor=fig.get_facecolor())
     plt.close()
     print(f"  -> {output_path}")
 
@@ -306,6 +369,7 @@ def plot_horizontal_spectrum(img, output_path, line_y=None):
 # ---------------------------------------------------------------------------
 # 4. VERTICAL SPECTRUM — scanline frequency detection
 # ---------------------------------------------------------------------------
+
 
 def plot_vertical_spectrum(img, output_path):
     """1D FFT of vertical profile — finds scanline periodicity.
@@ -333,36 +397,39 @@ def plot_vertical_spectrum(img, output_path):
     freqs = np.fft.rfftfreq(len(v_profile))
 
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 7))
-    fig.patch.set_facecolor('#0d0d0d')
+    fig.patch.set_facecolor("#0d0d0d")
 
-    ax1.plot(v_profile, color='#00ff00', linewidth=0.8)
-    ax1.set_title("Vertical Brightness Profile (averaged across bar region)", color='white')
-    ax1.set_ylabel("Pixel Value", color='white')
-    ax1.set_xlabel("Row (Y)", color='white')
-    ax1.set_facecolor('#1a1a1a')
-    ax1.tick_params(colors='white')
+    ax1.plot(v_profile, color="#00ff00", linewidth=0.8)
+    ax1.set_title("Vertical Brightness Profile (averaged across bar region)", color="white")
+    ax1.set_ylabel("Pixel Value", color="white")
+    ax1.set_xlabel("Row (Y)", color="white")
+    ax1.set_facecolor("#1a1a1a")
+    ax1.tick_params(colors="white")
 
     db = 20 * np.log10(magnitude[1:] + 1e-10)
-    ax2.plot(freqs[1:], db, color='#ff6600', linewidth=0.8)
-    ax2.set_title("Vertical Frequency Spectrum (dB)", color='white')
-    ax2.set_xlabel("Frequency (cycles/pixel)", color='white')
-    ax2.set_ylabel("dB", color='white')
-    ax2.set_facecolor('#1a1a1a')
-    ax2.tick_params(colors='white')
+    ax2.plot(freqs[1:], db, color="#ff6600", linewidth=0.8)
+    ax2.set_title("Vertical Frequency Spectrum (dB)", color="white")
+    ax2.set_xlabel("Frequency (cycles/pixel)", color="white")
+    ax2.set_ylabel("dB", color="white")
+    ax2.set_facecolor("#1a1a1a")
+    ax2.tick_params(colors="white")
 
     # Find dominant peak (scanline freq)
     peak_idx = np.argmax(magnitude[1:]) + 1
     peak_freq = freqs[peak_idx]
     if peak_freq > 0:
         peak_period = 1.0 / peak_freq
-        ax2.axvline(x=peak_freq, color='red', linewidth=1, linestyle='--')
-        ax2.text(peak_freq + 0.005, db.max() * 0.9,
-                 f"Peak: {peak_freq:.4f} c/px\n= {peak_period:.1f} px/scanline",
-                 fontsize=9, color='red')
+        ax2.axvline(x=peak_freq, color="red", linewidth=1, linestyle="--")
+        ax2.text(
+            peak_freq + 0.005,
+            db.max() * 0.9,
+            f"Peak: {peak_freq:.4f} c/px\n= {peak_period:.1f} px/scanline",
+            fontsize=9,
+            color="red",
+        )
 
     plt.tight_layout()
-    plt.savefig(str(output_path), dpi=150, bbox_inches='tight',
-                facecolor=fig.get_facecolor())
+    plt.savefig(str(output_path), dpi=150, bbox_inches="tight", facecolor=fig.get_facecolor())
     plt.close()
     print(f"  -> {output_path}")
 
@@ -370,6 +437,7 @@ def plot_vertical_spectrum(img, output_path):
 # ---------------------------------------------------------------------------
 # 5. BAND-PASS FILTER — isolate specific frequency content
 # ---------------------------------------------------------------------------
+
 
 def bandpass_filter_image(img, low_freq=0.05, high_freq=0.2):
     """Apply a 2D band-pass filter to isolate medium-frequency content.
@@ -390,7 +458,7 @@ def bandpass_filter_image(img, low_freq=0.05, high_freq=0.2):
     # Create bandpass mask
     cy, cx = rows // 2, cols // 2
     y_coords, x_coords = np.ogrid[:rows, :cols]
-    dist = np.sqrt((y_coords - cy)**2 + (x_coords - cx)**2)
+    dist = np.sqrt((y_coords - cy) ** 2 + (x_coords - cx) ** 2)
 
     # Convert freq to pixel radius
     max_dim = max(rows, cols)
@@ -399,8 +467,8 @@ def bandpass_filter_image(img, low_freq=0.05, high_freq=0.2):
 
     # Smooth Butterworth-style bandpass
     order = 4
-    lp = 1.0 / (1.0 + (dist / r_high)**(2 * order))  # low-pass at high_freq
-    hp = 1.0 - 1.0 / (1.0 + (dist / r_low)**(2 * order))  # high-pass at low_freq
+    lp = 1.0 / (1.0 + (dist / r_high) ** (2 * order))  # low-pass at high_freq
+    hp = 1.0 - 1.0 / (1.0 + (dist / r_low) ** (2 * order))  # high-pass at low_freq
     mask = lp * hp
 
     # Apply
@@ -418,6 +486,7 @@ def bandpass_filter_image(img, low_freq=0.05, high_freq=0.2):
 # 6. REFERENCE COMPARISON — side-by-side with ideal bars
 # ---------------------------------------------------------------------------
 
+
 def generate_reference_bars(width, height):
     """Generate a perfect SMPTE 75% color bar reference image."""
     ref = np.zeros((height, width, 3), dtype=np.uint8)
@@ -427,7 +496,7 @@ def generate_reference_bars(width, height):
         x_start = idx * bar_width
         x_end = (idx + 1) * bar_width if idx < 7 else width
         r, g, b = bar["rgb_75"]
-        ref[0:int(height*0.67), x_start:x_end] = [b, g, r]  # BGR
+        ref[0 : int(height * 0.67), x_start:x_end] = [b, g, r]  # BGR
 
     return ref
 
@@ -460,6 +529,7 @@ def comparison_diff(img, output_path):
 # ---------------------------------------------------------------------------
 # 7. I/Q CHANNEL HEATMAPS
 # ---------------------------------------------------------------------------
+
 
 def iq_heatmaps(img, output_dir):
     """Generate color-mapped heatmaps of I and Q channels.
@@ -498,13 +568,15 @@ def iq_heatmaps(img, output_dir):
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="Advanced CRT Signal Analysis — chrominance phase, frequency, and reference comparison"
     )
     parser.add_argument("input", help="Input image (PNG/JPG from webcam capture)")
-    parser.add_argument("--output-dir", "-o", default="./crt_analysis_advanced",
-                        help="Output directory")
+    parser.add_argument(
+        "--output-dir", "-o", default="./crt_analysis_advanced", help="Output directory"
+    )
 
     args = parser.parse_args()
 
@@ -517,7 +589,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     stem = Path(args.input).stem
 
-    print(f"=== Advanced Signal Analysis ===")
+    print("=== Advanced Signal Analysis ===")
     print(f"Input:  {args.input} ({img.shape[1]}x{img.shape[0]})")
     print(f"Output: {out}/\n")
 
@@ -534,9 +606,11 @@ def main():
     plot_vertical_spectrum(img, out / f"{stem}_v_spectrum.png")
 
     print("[5/7] Band-pass filtered views...")
-    for name, lo, hi in [("low_detail", 0.01, 0.05),
-                          ("mid_detail", 0.05, 0.2),
-                          ("high_detail", 0.2, 0.45)]:
+    for name, lo, hi in [
+        ("low_detail", 0.01, 0.05),
+        ("mid_detail", 0.05, 0.2),
+        ("high_detail", 0.2, 0.45),
+    ]:
         filtered = bandpass_filter_image(img, lo, hi)
         path = out / f"{stem}_bandpass_{name}.png"
         cv2.imwrite(str(path), filtered)

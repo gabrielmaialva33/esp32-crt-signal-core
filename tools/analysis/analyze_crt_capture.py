@@ -15,24 +15,25 @@ Usage:
 """
 
 import argparse
-import cv2
-import numpy as np
 import sys
 from pathlib import Path
+
+import cv2
+import numpy as np
 
 # ---------------------------------------------------------------------------
 # NTSC 75% Color Bar Reference (SMPTE EG-1)
 # ---------------------------------------------------------------------------
 # Phase angles relative to burst (degrees), luma in IRE
 NTSC_75_BARS = {
-    "white":   {"ire": 77.0, "phase": None,   "rgb": (191, 191, 191)},
-    "yellow":  {"ire": 69.0, "phase": 167.1,  "rgb": (191, 191,   0)},
-    "cyan":    {"ire": 56.0, "phase": 283.5,  "rgb": (  0, 191, 191)},
-    "green":   {"ire": 48.0, "phase": 240.7,  "rgb": (  0, 191,   0)},
-    "magenta": {"ire": 36.0, "phase":  60.7,  "rgb": (191,   0, 191)},
-    "red":     {"ire": 28.0, "phase": 103.5,  "rgb": (191,   0,   0)},
-    "blue":    {"ire": 15.0, "phase": 347.1,  "rgb": (  0,   0, 191)},
-    "black":   {"ire":  7.5, "phase": None,   "rgb": (  0,   0,   0)},
+    "white": {"ire": 77.0, "phase": None, "rgb": (191, 191, 191)},
+    "yellow": {"ire": 69.0, "phase": 167.1, "rgb": (191, 191, 0)},
+    "cyan": {"ire": 56.0, "phase": 283.5, "rgb": (0, 191, 191)},
+    "green": {"ire": 48.0, "phase": 240.7, "rgb": (0, 191, 0)},
+    "magenta": {"ire": 36.0, "phase": 60.7, "rgb": (191, 0, 191)},
+    "red": {"ire": 28.0, "phase": 103.5, "rgb": (191, 0, 0)},
+    "blue": {"ire": 15.0, "phase": 347.1, "rgb": (0, 0, 191)},
+    "black": {"ire": 7.5, "phase": None, "rgb": (0, 0, 0)},
 }
 
 # ESP32 DAC levels from crt_demo_pattern.c mapped to normalized 0-1
@@ -43,13 +44,14 @@ ESP32_LUMA_LEVELS = [18176, 16880, 14643, 13348, 11228, 9933, 7695, 6400]
 # 1. BASIC ENHANCEMENT
 # ---------------------------------------------------------------------------
 
+
 def enhance_clahe(img, clip_limit=3.0, grid_size=(8, 8)):
     """CLAHE on luminance channel — reveals subtle luma variations."""
     lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
-    l, a, b = cv2.split(lab)
+    lum, a, b = cv2.split(lab)
     clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=grid_size)
-    l_enhanced = clahe.apply(l)
-    enhanced = cv2.merge([l_enhanced, a, b])
+    lum_enhanced = clahe.apply(lum)
+    enhanced = cv2.merge([lum_enhanced, a, b])
     return cv2.cvtColor(enhanced, cv2.COLOR_LAB2BGR)
 
 
@@ -89,6 +91,7 @@ def enhance_unsharp_mask(img, sigma=2.0, strength=1.5):
 # ---------------------------------------------------------------------------
 # 2. FALSE COLOR / HEATMAP (signal level visualization)
 # ---------------------------------------------------------------------------
+
 
 def false_color_luma(img, colormap=cv2.COLORMAP_JET):
     """False color map of luminance — like broadcast waveform monitor colors.
@@ -130,29 +133,38 @@ def false_color_ire_zones(img):
     # Low (7.5-30 IRE)
     mask = (ire >= 7.5 * 1.1) & (ire < 30)
     t = np.clip((ire[mask] - 7.5) / (30 - 7.5), 0, 1)
-    result[mask] = np.stack([
-        (200 * (1 - t)).astype(np.uint8),
-        (200 * t).astype(np.uint8),
-        np.zeros_like(t, dtype=np.uint8)
-    ], axis=-1)
+    result[mask] = np.stack(
+        [
+            (200 * (1 - t)).astype(np.uint8),
+            (200 * t).astype(np.uint8),
+            np.zeros_like(t, dtype=np.uint8),
+        ],
+        axis=-1,
+    )
 
     # Mid (30-70 IRE)
     mask = (ire >= 30) & (ire < 70)
     t = np.clip((ire[mask] - 30) / (70 - 30), 0, 1)
-    result[mask] = np.stack([
-        np.zeros_like(t, dtype=np.uint8),
-        (255 * (1 - t * 0.5)).astype(np.uint8),
-        (255 * t).astype(np.uint8)
-    ], axis=-1)
+    result[mask] = np.stack(
+        [
+            np.zeros_like(t, dtype=np.uint8),
+            (255 * (1 - t * 0.5)).astype(np.uint8),
+            (255 * t).astype(np.uint8),
+        ],
+        axis=-1,
+    )
 
     # High (70-100 IRE)
     mask = (ire >= 70) & (ire < 100)
     t = np.clip((ire[mask] - 70) / (100 - 70), 0, 1)
-    result[mask] = np.stack([
-        np.zeros_like(t, dtype=np.uint8),
-        (128 * (1 - t)).astype(np.uint8),
-        np.full_like(t, 255, dtype=np.uint8)
-    ], axis=-1)
+    result[mask] = np.stack(
+        [
+            np.zeros_like(t, dtype=np.uint8),
+            (128 * (1 - t)).astype(np.uint8),
+            np.full_like(t, 255, dtype=np.uint8),
+        ],
+        axis=-1,
+    )
 
     # Super white (> 100 IRE — illegal in NTSC)
     mask = ire >= 100
@@ -164,6 +176,7 @@ def false_color_ire_zones(img):
 # ---------------------------------------------------------------------------
 # 3. CHANNEL SEPARATION
 # ---------------------------------------------------------------------------
+
 
 def extract_channels_yuv(img):
     """Separate Y, U, V channels — the native domain of composite video."""
@@ -222,6 +235,7 @@ def extract_channels_hsv(img):
 # 4. VECTORSCOPE EMULATION
 # ---------------------------------------------------------------------------
 
+
 def software_vectorscope(img, size=512):
     """Generate a vectorscope plot from the image — like a broadcast monitor.
 
@@ -241,15 +255,18 @@ def software_vectorscope(img, size=512):
     # Draw target boxes for 75% NTSC bars
     scale = size / 256.0
     bar_targets = {
-        "Yl": (44, 136),   "Cy": (166, 16),  "Gn": (38, 16),
-        "Mg": (218, 240), "Rd": (90, 240), "Bl": (218, 120),
+        "Yl": (44, 136),
+        "Cy": (166, 16),
+        "Gn": (38, 16),
+        "Mg": (218, 240),
+        "Rd": (90, 240),
+        "Bl": (218, 120),
     }
     for name, (u_val, v_val) in bar_targets.items():
         x = int(u_val * scale)
         y = int((255 - v_val) * scale)
         cv2.rectangle(scope, (x - 8, y - 8), (x + 8, y + 8), (0, 80, 0), 1)
-        cv2.putText(scope, name, (x + 10, y + 4),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 120, 0), 1)
+        cv2.putText(scope, name, (x + 10, y + 4), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 120, 0), 1)
 
     # Plot pixels
     u_flat = u.flatten().astype(np.float32)
@@ -268,7 +285,7 @@ def software_vectorscope(img, size=512):
     y_coords = np.clip(y_coords, 0, size - 1)
 
     # Accumulate with color
-    for x, y in zip(x_coords, y_coords):
+    for x, y in zip(x_coords, y_coords, strict=False):
         scope[y, x] = np.minimum(scope[y, x].astype(np.int32) + [2, 6, 2], 255).astype(np.uint8)
 
     return scope
@@ -277,6 +294,7 @@ def software_vectorscope(img, size=512):
 # ---------------------------------------------------------------------------
 # 5. HUE ANGLE MEASUREMENT
 # ---------------------------------------------------------------------------
+
 
 def measure_bar_hue_angles(img, num_bars=8, margin_pct=0.15):
     """Measure the actual hue angle of each color bar region.
@@ -382,25 +400,49 @@ def draw_bar_analysis_overlay(img, measurements):
         y_base = int(h * 0.65)
 
         # Bar name
-        cv2.putText(overlay, m["bar"].upper(),
-                    (x - 25, y_base),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+        cv2.putText(
+            overlay,
+            m["bar"].upper(),
+            (x - 25, y_base),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.4,
+            (255, 255, 255),
+            1,
+        )
 
         # IRE level
-        cv2.putText(overlay, f"{m['approx_ire']:.0f} IRE",
-                    (x - 25, y_base + 18),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.35, (200, 200, 200), 1)
+        cv2.putText(
+            overlay,
+            f"{m['approx_ire']:.0f} IRE",
+            (x - 25, y_base + 18),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.35,
+            (200, 200, 200),
+            1,
+        )
 
         # Phase angle (skip achromatic bars)
         if m["ref_phase"] is not None:
             color = (0, 255, 0) if abs(m["phase_error"] or 999) < 10 else (0, 0, 255)
-            cv2.putText(overlay, f"Ph:{m['yiq_phase_deg']:.0f}",
-                        (x - 25, y_base + 34),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.35, color, 1)
+            cv2.putText(
+                overlay,
+                f"Ph:{m['yiq_phase_deg']:.0f}",
+                (x - 25, y_base + 34),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.35,
+                color,
+                1,
+            )
             if m["phase_error"] is not None:
-                cv2.putText(overlay, f"Err:{m['phase_error']:+.1f}",
-                            (x - 25, y_base + 48),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.3, color, 1)
+                cv2.putText(
+                    overlay,
+                    f"Err:{m['phase_error']:+.1f}",
+                    (x - 25, y_base + 48),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.3,
+                    color,
+                    1,
+                )
 
     return overlay
 
@@ -408,6 +450,7 @@ def draw_bar_analysis_overlay(img, measurements):
 # ---------------------------------------------------------------------------
 # 6. WAVEFORM MONITOR EMULATION
 # ---------------------------------------------------------------------------
+
 
 def software_waveform(img, height=256):
     """Generate a waveform monitor display — plots luma per column.
@@ -424,17 +467,18 @@ def software_waveform(img, height=256):
         for val in column:
             y = height - 1 - int(val * (height - 1) / 255)
             y = max(0, min(y, height - 1))
-            scope[y, col] = np.minimum(
-                scope[y, col].astype(np.int32) + [1, 4, 1], 255
-            ).astype(np.uint8)
+            scope[y, col] = np.minimum(scope[y, col].astype(np.int32) + [1, 4, 1], 255).astype(
+                np.uint8
+            )
 
     # Draw IRE reference lines
     for ire, label in [(7.5, "7.5"), (50, "50"), (100, "100")]:
         y_pos = height - 1 - int((ire / 110.0) * (height - 1))
         y_pos = max(0, min(y_pos, height - 1))
         scope[y_pos, :] = np.maximum(scope[y_pos, :], [30, 30, 0])
-        cv2.putText(scope, f"{label} IRE", (4, y_pos - 2),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 60, 60), 1)
+        cv2.putText(
+            scope, f"{label} IRE", (4, y_pos - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 60, 60), 1
+        )
 
     return scope
 
@@ -457,6 +501,7 @@ def luma_line_profile(img, line_y=None):
 # ---------------------------------------------------------------------------
 # 7. FFT FREQUENCY DOMAIN ANALYSIS
 # ---------------------------------------------------------------------------
+
 
 def fft_magnitude_spectrum(img):
     """2D FFT magnitude spectrum — reveals periodic patterns.
@@ -534,7 +579,7 @@ def fft_notch_demoire(img, notch_radius=5, threshold_pct=99.5):
     for y in range(rows):
         for x in range(cols):
             if magnitude[y, x] > threshold:
-                dist = np.sqrt((y - center_y)**2 + (x - center_x)**2)
+                dist = np.sqrt((y - center_y) ** 2 + (x - center_x) ** 2)
                 if dist > 10:  # skip DC component
                     # Notch out this frequency
                     cv2.circle(mask, (x, y), notch_radius, 0, -1)
@@ -556,6 +601,7 @@ def fft_notch_demoire(img, notch_radius=5, threshold_pct=99.5):
 # ---------------------------------------------------------------------------
 # 8. SCANLINE ANALYSIS
 # ---------------------------------------------------------------------------
+
 
 def extract_scanlines(img, min_period=2, max_period=10):
     """Detect and extract CRT scanline positions from the capture.
@@ -599,6 +645,7 @@ def extract_scanlines(img, min_period=2, max_period=10):
 # 9. EDGE / TRANSITION ANALYSIS
 # ---------------------------------------------------------------------------
 
+
 def analyze_bar_transitions(img):
     """Measure the sharpness of color bar transitions.
 
@@ -630,13 +677,16 @@ def analyze_bar_transitions(img):
         "line_profile": line,
         "gradient": gradient,
         "transition_positions": transitions,
-        "mean_gradient_at_transitions": float(np.mean(np.abs(gradient[transitions]))) if len(transitions) > 0 else 0,
+        "mean_gradient_at_transitions": float(np.mean(np.abs(gradient[transitions])))
+        if len(transitions) > 0
+        else 0,
     }
 
 
 # ---------------------------------------------------------------------------
 # 10. HISTOGRAM ANALYSIS
 # ---------------------------------------------------------------------------
+
 
 def detailed_histogram(img):
     """Generate per-channel and luma histograms with reference markers.
@@ -675,6 +725,7 @@ def detailed_histogram(img):
 # 11. COMPOSITE: DIAGNOSTIC DASHBOARD
 # ---------------------------------------------------------------------------
 
+
 def create_diagnostic_dashboard(img):
     """Generate a single composite image with all key diagnostic views.
 
@@ -696,9 +747,14 @@ def create_diagnostic_dashboard(img):
 
     # Labels
     font = cv2.FONT_HERSHEY_SIMPLEX
-    for panel, label in [(original, "ORIGINAL"), (clahe, "CLAHE"),
-                         (fc, "FALSE COLOR"), (wf, "WAVEFORM"),
-                         (vs, "VECTORSCOPE"), (fft, "FFT SPECTRUM")]:
+    for panel, label in [
+        (original, "ORIGINAL"),
+        (clahe, "CLAHE"),
+        (fc, "FALSE COLOR"),
+        (wf, "WAVEFORM"),
+        (vs, "VECTORSCOPE"),
+        (fft, "FFT SPECTRUM"),
+    ]:
         cv2.putText(panel, label, (8, 20), font, 0.5, (0, 255, 255), 1)
 
     top_row = np.hstack([original, clahe, fc])
@@ -712,14 +768,20 @@ def create_diagnostic_dashboard(img):
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def save_img(img, output_dir: Path, name: str):
     path = output_dir / f"{name}.png"
     cv2.imwrite(str(path), img)
     print(f"  -> {path}")
 
 
-def run_analysis(input_path: str, output_dir: str, standard: str = "ntsc",
-                 quick: bool = False, run_all: bool = True):
+def run_analysis(
+    input_path: str,
+    output_dir: str,
+    standard: str = "ntsc",
+    quick: bool = False,
+    run_all: bool = True,
+):
     img = cv2.imread(input_path)
     if img is None:
         print(f"ERROR: cannot read {input_path}")
@@ -730,7 +792,7 @@ def run_analysis(input_path: str, output_dir: str, standard: str = "ntsc",
 
     stem = Path(input_path).stem
 
-    print(f"=== CRT Capture Analyzer ===")
+    print("=== CRT Capture Analyzer ===")
     print(f"Input:    {input_path} ({img.shape[1]}x{img.shape[0]})")
     print(f"Standard: {standard.upper()}")
     print(f"Output:   {out}/\n")
@@ -790,13 +852,17 @@ def run_analysis(input_path: str, output_dir: str, standard: str = "ntsc",
     save_img(draw_bar_analysis_overlay(img, measurements), out, f"{stem}_bar_overlay")
 
     print("\n  === COLOR BAR MEASUREMENTS ===")
-    print(f"  {'Bar':<10} {'IRE':>6} {'YIQ Phase':>10} {'Ref Phase':>10} {'Phase Err':>10} {'Chroma':>8}")
-    print(f"  {'-'*10} {'-'*6} {'-'*10} {'-'*10} {'-'*10} {'-'*8}")
+    print(
+        f"  {'Bar':<10} {'IRE':>6} {'YIQ Phase':>10} {'Ref Phase':>10} {'Phase Err':>10} {'Chroma':>8}"
+    )
+    print(f"  {'-' * 10} {'-' * 6} {'-' * 10} {'-' * 10} {'-' * 10} {'-' * 8}")
     for m in measurements:
         ref_ph = f"{m['ref_phase']:.1f}" if m["ref_phase"] else "  ---"
         err = f"{m['phase_error']:+.1f}" if m["phase_error"] is not None else "  ---"
-        print(f"  {m['bar']:<10} {m['approx_ire']:>5.1f} "
-              f"{m['yiq_phase_deg']:>9.1f} {ref_ph:>10} {err:>10} {m['yiq_chroma_amp']:>7.4f}")
+        print(
+            f"  {m['bar']:<10} {m['approx_ire']:>5.1f} "
+            f"{m['yiq_phase_deg']:>9.1f} {ref_ph:>10} {err:>10} {m['yiq_chroma_amp']:>7.4f}"
+        )
     print()
 
     # --- Waveform ---
@@ -842,14 +908,23 @@ def main():
         description="CRT Capture Analyzer — NASA-style post-processing for signal diagnostics"
     )
     parser.add_argument("input", help="Input image (PNG/JPG from webcam capture)")
-    parser.add_argument("--output-dir", "-o", default="./crt_analysis",
-                        help="Output directory (default: ./crt_analysis)")
-    parser.add_argument("--standard", "-s", choices=["ntsc", "pal"], default="ntsc",
-                        help="Video standard (default: ntsc)")
-    parser.add_argument("--quick", "-q", action="store_true",
-                        help="Quick mode — skip slow analyses")
-    parser.add_argument("--all", "-a", action="store_true",
-                        help="Run all analyses (default)")
+    parser.add_argument(
+        "--output-dir",
+        "-o",
+        default="./crt_analysis",
+        help="Output directory (default: ./crt_analysis)",
+    )
+    parser.add_argument(
+        "--standard",
+        "-s",
+        choices=["ntsc", "pal"],
+        default="ntsc",
+        help="Video standard (default: ntsc)",
+    )
+    parser.add_argument(
+        "--quick", "-q", action="store_true", help="Quick mode — skip slow analyses"
+    )
+    parser.add_argument("--all", "-a", action="store_true", help="Run all analyses (default)")
 
     args = parser.parse_args()
     run_analysis(args.input, args.output_dir, args.standard, args.quick, args.all)
