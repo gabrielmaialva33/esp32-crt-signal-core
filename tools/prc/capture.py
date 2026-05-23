@@ -15,15 +15,13 @@ from __future__ import annotations
 
 import argparse
 import re
-import sys
 import time
 from datetime import datetime
 from pathlib import Path
 
 import serial
 
-
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 TMP_DIR = PROJECT_ROOT / "tmp" / "prc_runs"
 
 
@@ -60,13 +58,13 @@ def parse_run(text: str) -> dict:
 
     for line in text.splitlines():
         # Calibration
-        m = re.search(r"IR cal: CLARO\s+min=\s*(\d+) max=\s*(\d+) mean=\s*(\d+)", line)
+        m = re.search(r"IR cal: LIGHT\s+min=\s*(\d+) max=\s*(\d+) mean=\s*(\d+)", line)
         if m:
-            out["cal"]["claro"] = tuple(int(x) for x in m.groups())
+            out["cal"]["light"] = tuple(int(x) for x in m.groups())
             continue
-        m = re.search(r"IR cal: ESCURO min=\s*(\d+) max=\s*(\d+) mean=\s*(\d+)", line)
+        m = re.search(r"IR cal: DARK\s+min=\s*(\d+) max=\s*(\d+) mean=\s*(\d+)", line)
         if m:
-            out["cal"]["escuro"] = tuple(int(x) for x in m.groups())
+            out["cal"]["dark"] = tuple(int(x) for x in m.groups())
             continue
         m = re.search(r"IR cal: swing=([+-]?\d+) baseline=(\d+) threshold=(\d+) hyst=(\d+)", line)
         if m:
@@ -100,9 +98,7 @@ def parse_run(text: str) -> dict:
             continue
 
         # Decay header
-        m = re.search(
-            r"decay: trial=(\d+) period_us=(\d+) switch_idx=(\d+) N=(\d+)", line
-        )
+        m = re.search(r"decay: trial=(\d+) period_us=(\d+) switch_idx=(\d+) N=(\d+)", line)
         if m:
             out["decay_period_us"] = int(m.group(2))
             out["decay_switch_idx"] = int(m.group(3))
@@ -119,9 +115,7 @@ def parse_run(text: str) -> dict:
         if m:
             out["prbs_bits"] = int(m.group(1), 16)
             continue
-        m = re.search(
-            r"prbs: bits_lo=0x([0-9a-fA-F]+)\s+bits_hi=0x([0-9a-fA-F]+)", line
-        )
+        m = re.search(r"prbs: bits_lo=0x([0-9a-fA-F]+)\s+bits_hi=0x([0-9a-fA-F]+)", line)
         if m:
             lo = int(m.group(1), 16)
             hi = int(m.group(2), 16)
@@ -153,9 +147,7 @@ def parse_run(text: str) -> dict:
             continue
         m = re.search(r"mprbs_b: i=\s*(\d+)\s+(.+)$", line)
         if m:
-            out.setdefault("mprbs_bits", []).extend(
-                int(v, 16) for v in m.group(2).split()
-            )
+            out.setdefault("mprbs_bits", []).extend(int(v, 16) for v in m.group(2).split())
             continue
         m = re.search(r"mprbs_a: i=\s*(\d+)\s+(.+)$", line)
         if m:
@@ -189,10 +181,10 @@ def write_csvs(parsed: dict, outdir: Path) -> None:
     if cal:
         with (outdir / "cal.csv").open("w") as f:
             f.write("phase,min,max,mean\n")
-            if "claro" in cal:
-                f.write(f"CLARO,{cal['claro'][0]},{cal['claro'][1]},{cal['claro'][2]}\n")
-            if "escuro" in cal:
-                f.write(f"ESCURO,{cal['escuro'][0]},{cal['escuro'][1]},{cal['escuro'][2]}\n")
+            if "light" in cal:
+                f.write(f"LIGHT,{cal['light'][0]},{cal['light'][1]},{cal['light'][2]}\n")
+            if "dark" in cal:
+                f.write(f"DARK,{cal['dark'][0]},{cal['dark'][1]},{cal['dark'][2]}\n")
             f.write("\n# derived\n")
             for k in ("swing", "baseline", "threshold", "hyst"):
                 if k in cal:
@@ -255,7 +247,9 @@ def write_csvs(parsed: dict, outdir: Path) -> None:
             f.write("tick,b0,b1,b2,b3,bits_hex,adc\n")
             for i in range(n):
                 b = bits[i]
-                f.write(f"{i},{(b>>0)&1},{(b>>1)&1},{(b>>2)&1},{(b>>3)&1},{b:x},{adcs[i]}\n")
+                f.write(
+                    f"{i},{(b >> 0) & 1},{(b >> 1) & 1},{(b >> 2) & 1},{(b >> 3) & 1},{b:x},{adcs[i]}\n"
+                )
 
     # gprbs.csv (gray-level PRBS, 4 amplitudes)
     if parsed.get("gprbs_lvl") and parsed.get("gprbs_adc"):
@@ -282,8 +276,8 @@ def analyze(parsed: dict) -> str:
     if cal:
         lines.append(
             f"Calibration: swing={cal.get('swing')} LSB "
-            f"(CLARO mean={cal.get('claro', (0, 0, 0))[2]}, "
-            f"ESCURO mean={cal.get('escuro', (0, 0, 0))[2]})"
+            f"(LIGHT mean={cal.get('light', (0, 0, 0))[2]}, "
+            f"DARK mean={cal.get('dark', (0, 0, 0))[2]})"
         )
         lines.append(
             f"  threshold={cal.get('threshold')} hyst={cal.get('hyst')} "
@@ -330,15 +324,12 @@ def analyze(parsed: dict) -> str:
         decay_pct = (1 - post_mean / pre_mean) * 100 if pre_mean else 0
         capture_ms = (n - switch_idx) * period_us / 1000
         lines.append("")
+        lines.append(f"Decay (avg of {len(trials)} trials, {capture_ms:.1f} ms post-switch):")
         lines.append(
-            f"Decay (avg of {len(trials)} trials, {capture_ms:.1f} ms post-switch):"
+            f"  pre_mean={pre_mean:.0f}  post_mean={post_mean:.0f}  decay={decay_pct:.1f}%"
         )
-        lines.append(f"  pre_mean={pre_mean:.0f}  post_mean={post_mean:.0f}  "
-                     f"decay={decay_pct:.1f}%")
         if abs(decay_pct) < 5:
-            lines.append(
-                "  → phosphor persistence dominates 25 ms window; need longer capture"
-            )
+            lines.append("  → phosphor persistence dominates 25 ms window; need longer capture")
 
     if parsed.get("prbs_adc") and parsed.get("prbs_bits") is not None:
         bits = parsed["prbs_bits"]
@@ -392,8 +383,9 @@ def main():
     ap.add_argument("--port", default="/dev/ttyACM1")
     ap.add_argument("--baud", type=int, default=115200)
     ap.add_argument("--duration", type=float, default=22.0)
-    ap.add_argument("--no-reset", action="store_true",
-                    help="skip DTR/RTS pulse (already-running session)")
+    ap.add_argument(
+        "--no-reset", action="store_true", help="skip DTR/RTS pulse (already-running session)"
+    )
     args = ap.parse_args()
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")

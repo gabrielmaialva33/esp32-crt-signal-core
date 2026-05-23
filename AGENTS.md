@@ -110,7 +110,16 @@ gcc -I components/crt_tile/include -I components/crt_core/include \
 
 # Tooling
 (cd tools/crt_monitor && make)
-python tools/img2fb.py <input_image> <output.h> <variable_name>
+python tools/assets/img2fb.py <input_image> <output.h> <variable_name>
+
+# PRC pipeline (host-side)
+/usr/bin/python3 tools/prc/capture.py --port /dev/ttyACM0 --duration 150
+uv run --with scipy --with numpy python tools/prc/analyze.py --run <subdir>
+uv run --with scipy --with numpy python tools/prc/memory_capacity.py --run <subdir>
+
+# Python lint/format (uses uv + ruff)
+make format-py
+make lint-py
 ```
 
 ## Verification Matrix
@@ -127,6 +136,7 @@ python tools/img2fb.py <input_image> <output.h> <variable_name>
 - Changes under `components/crt_tile/`: run `crt_tile_test`
 - Changes under `main/`, `components/crt_hal/`, `components/crt_core/crt_core.c`, or Kconfig/build wiring: run `idf.py build`
 - Changes under `tools/crt_monitor/`: run `make` in `tools/crt_monitor`
+- Changes under `tools/` Python sources: run `make lint-py` (and `make format-py` to autofix)
 - Documentation-only changes: verify for drift against current code paths and commands; update `README.md` if agent docs changed operational behavior
 
 ## Repository Map
@@ -144,7 +154,10 @@ python tools/img2fb.py <input_image> <output.h> <variable_name>
 - `components/crt_tile/`: PPU-style tilemap backend (8x8 indexed-8 patterns + nametable + scroll), fast 256→768 expansion path, fused scanline hook for compose delegation
 - `tests/`: host-compiled assertion-based tests plus ESP-IDF stubs
 - `tools/crt_monitor/`: webcam-backed monitoring dashboard
-- `tools/img2fb.py`: image-to-framebuffer conversion helper
+- `tools/prc/`: Physical Reservoir Computing pipeline (capture, analyze, memory_capacity)
+- `tools/assets/`: image-to-framebuffer / RGB332 conversion helpers
+- `tools/setup/`: udev rules + shell scripts for capture rig setup
+- `tools/analysis/`: webcam capture post-processing (cv2/R)
 - `docs/research/`: research direction and physical-computing notes
 
 ## Architecture Invariants

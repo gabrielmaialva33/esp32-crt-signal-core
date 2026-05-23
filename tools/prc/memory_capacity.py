@@ -27,14 +27,12 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import csv
 import sys
 from pathlib import Path
 
 import numpy as np
 
-
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 TMP_DIR = PROJECT_ROOT / "tmp" / "prc_runs"
 
 
@@ -60,8 +58,9 @@ def load_mprbs(path: Path):
                 continue
             parts = line.strip().split(",")
             if len(parts) >= 7:
-                rows.append([int(parts[1]), int(parts[2]), int(parts[3]),
-                             int(parts[4]), int(parts[6])])
+                rows.append(
+                    [int(parts[1]), int(parts[2]), int(parts[3]), int(parts[4]), int(parts[6])]
+                )
     arr = np.array(rows)
     return arr[:, :4], arr[:, 4].astype(float)
 
@@ -113,8 +112,9 @@ def mc_at_delay(bits: np.ndarray, X: np.ndarray, k: int, ridge: float) -> tuple[
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--run", default=None)
-    ap.add_argument("--window", type=int, default=8,
-                    help="readout window size (number of past ADC samples)")
+    ap.add_argument(
+        "--window", type=int, default=8, help="readout window size (number of past ADC samples)"
+    )
     ap.add_argument("--max-delay", type=int, default=15)
     ap.add_argument("--ridge", type=float, default=1e-3)
     args = ap.parse_args()
@@ -156,7 +156,7 @@ def main():
             mc_per_k.append(r2)
         total_mc = sum(mc_per_k)
         print("=" * 64)
-        print(f"GRAY-LEVEL PRBS — predict u[t-k] (level idx 0..3) from x[t]")
+        print("GRAY-LEVEL PRBS — predict u[t-k] (level idx 0..3) from x[t]")
         print(f"  window W = {args.window}, ridge λ = {args.ridge}")
         print("=" * 64)
         for k, mc in enumerate(mc_per_k):
@@ -164,8 +164,9 @@ def main():
             print(f"  k={k:2d} | {mc:.4f}  {bar}")
         print("=" * 64)
         print(f"  total MC = {total_mc:.4f}")
-        print(f"  upper bound (W) = {args.window}, ratio = "
-              f"{100*total_mc/args.window:.1f}% of W")
+        print(
+            f"  upper bound (W) = {args.window}, ratio = {100 * total_mc / args.window:.1f}% of W"
+        )
         print("=" * 64)
 
         out_csv = run_dir / "mc_gray.csv"
@@ -180,7 +181,9 @@ def main():
     mprbs_path = run_dir / "mprbs.csv"
     if mprbs_path.exists():
         bits_matrix, adc = load_mprbs(mprbs_path)
-        print(f"# multi-input mode: {bits_matrix.shape[0]} ticks × {bits_matrix.shape[1]} quadrants")
+        print(
+            f"# multi-input mode: {bits_matrix.shape[0]} ticks × {bits_matrix.shape[1]} quadrants"
+        )
         X = build_state_matrix(adc, args.window)
         total_mc_global = 0.0
         per_quadrant = []
@@ -200,24 +203,31 @@ def main():
         print("\n" + "=" * 64)
         print(f"  total MC across 4 quadrants = {total_mc_global:.4f}")
         print(f"  theoretical upper bound     = {4 * args.window:.1f} (4 × W)")
-        print(f"  ratio                       = "
-              f"{100*total_mc_global/(4*args.window):.1f}% of 4·W")
+        print(
+            f"  ratio                       = "
+            f"{100 * total_mc_global / (4 * args.window):.1f}% of 4·W"
+        )
         print("=" * 64)
 
         out_csv = run_dir / "mc_multi.csv"
         with out_csv.open("w") as f:
             f.write("delay_k," + ",".join(f"q{q}" for q in range(len(per_quadrant))) + "\n")
             for k in range(args.max_delay + 1):
-                f.write(f"{k}," + ",".join(f"{per_quadrant[q][k]:.6f}"
-                                           for q in range(len(per_quadrant))) + "\n")
+                f.write(
+                    f"{k},"
+                    + ",".join(f"{per_quadrant[q][k]:.6f}" for q in range(len(per_quadrant)))
+                    + "\n"
+                )
             f.write(f"# total_mc={total_mc_global:.6f} window={args.window} ridge={args.ridge}\n")
         print(f"# saved {out_csv.relative_to(PROJECT_ROOT)}")
         return
 
     bits, adc = load_prbs(run_dir / "prbs.csv")
     if len(bits) < args.window + args.max_delay + 10:
-        print(f"# only {len(bits)} bits — need at least {args.window + args.max_delay + 10}",
-              file=sys.stderr)
+        print(
+            f"# only {len(bits)} bits — need at least {args.window + args.max_delay + 10}",
+            file=sys.stderr,
+        )
         sys.exit(2)
 
     X = build_state_matrix(adc, args.window)
@@ -232,15 +242,15 @@ def main():
     print(f"MEMORY CAPACITY of CRT-IR reservoir  (n_bits={len(bits)})")
     print(f"  window W = {args.window}  ridge λ = {args.ridge}")
     print("=" * 64)
-    print(f"  delay k | MC(k) = R²(û[t-k] | x[t])")
-    print(f"  --------+--------------------------")
+    print("  delay k | MC(k) = R²(û[t-k] | x[t])")
+    print("  --------+--------------------------")
     for k, mc in enumerate(mc_per_k):
         bar = "#" * int(mc * 40)
         print(f"  {k:7d} | {mc:.4f}  {bar}")
-    print(f"  --------+--------------------------")
+    print("  --------+--------------------------")
     print(f"   total  | MC = Σ_k MC(k) = {total_mc:.4f}")
     print(f"   max     | W = {args.window} (theoretical upper bound)")
-    print(f"   ratio  | {total_mc/args.window*100:.1f}% of W")
+    print(f"   ratio  | {total_mc / args.window * 100:.1f}% of W")
     print("=" * 64)
 
     # Save CSV

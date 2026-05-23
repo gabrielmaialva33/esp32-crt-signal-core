@@ -2,11 +2,13 @@
 """Convert image to C array for crt_fb framebuffer (INDEXED8 grayscale)."""
 
 import sys
-from PIL import Image, ImageEnhance, ImageOps
 from pathlib import Path
+
+from PIL import Image, ImageEnhance, ImageOps
 
 FB_WIDTH = 256
 FB_HEIGHT = 240  # NTSC active lines (must match crt_timing profile)
+
 
 def process_image(src: str) -> Image.Image:
     """Load image, resize to framebuffer, apply CRT gamma + enhance. Returns L-mode canvas."""
@@ -80,6 +82,7 @@ def convert(src: str, out: str, name: str = "godzilla"):
     preview = Path(out).with_suffix(".png")
     canvas.save(str(preview))
     print(f"  Preview: {preview}")
+
 
 if __name__ == "__main__":
     if "--raw" in sys.argv:

@@ -33,8 +33,7 @@ from pathlib import Path
 import numpy as np
 from scipy.optimize import curve_fit
 
-
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 TMP_DIR = PROJECT_ROOT / "tmp" / "prc_runs"
 
 
@@ -198,9 +197,14 @@ def fit_xy(matrix: np.ndarray, meta: dict):
     fwhm_y = 2.355 * popt[4]
 
     return {
-        "A": popt[0], "x0": popt[1], "y0": popt[2],
-        "sx": popt[3], "sy": popt[4], "theta": popt[5], "B": popt[6],
-        "err": dict(zip(["A", "x0", "y0", "sx", "sy", "theta", "B"], perr)),
+        "A": popt[0],
+        "x0": popt[1],
+        "y0": popt[2],
+        "sx": popt[3],
+        "sy": popt[4],
+        "theta": popt[5],
+        "B": popt[6],
+        "err": dict(zip(["A", "x0", "y0", "sx", "sy", "theta", "B"], perr, strict=True)),
         "r2": r2,
         "fwhm_x": fwhm_x,
         "fwhm_y": fwhm_y,
@@ -229,16 +233,15 @@ def fit_decay(decay: dict):
         B0 = y[-1]
         tau0 = max((t[-1] - t[0]) / 5, 1e-3)
         try:
-            popt, pcov = curve_fit(
-                exp_decay, t, y, p0=(A0, tau0, B0), maxfev=5000
-            )
+            popt, pcov = curve_fit(exp_decay, t, y, p0=(A0, tau0, B0), maxfev=5000)
             perr = np.sqrt(np.diag(pcov))
             y_pred = exp_decay(t, *popt)
             ss_res = np.sum((y - y_pred) ** 2)
             ss_tot = np.sum((y - y.mean()) ** 2)
             r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
-            fits.append({"trial": col, "A": popt[0], "tau": popt[1], "B": popt[2],
-                         "err": perr, "r2": r2})
+            fits.append(
+                {"trial": col, "A": popt[0], "tau": popt[1], "B": popt[2], "err": perr, "r2": r2}
+            )
         except Exception as e:
             fits.append({"trial": col, "error": str(e)})
     return {"fits": fits, "t": t}
@@ -258,10 +261,8 @@ def fit_prbs(prbs: dict, max_lag: int = 16):
         if k < len(bits):
             h[k] = np.dot(bits[: len(bits) - k], adc[k:]) / (len(bits) - k)
     # Normalize to peak
-    if np.max(np.abs(h)) > 0:
-        h_norm = h / np.max(np.abs(h))
-    else:
-        h_norm = h
+    h_peak = np.max(np.abs(h))
+    h_norm = h / h_peak if h_peak > 0 else h
     # Estimate τ from h: first lag where h drops below 1/e of peak
     peak = np.argmax(np.abs(h_norm))
     tau_lag = max_lag
@@ -284,31 +285,35 @@ def report_xy(fit, meta, lines):
         lines.append(f"  fit failed: {fit['error']}")
         return
     e = fit["err"]
-    lines.append(f"  μ = ({fit['x0']:.2f} ± {e['x0']:.2f}, "
-                 f"{fit['y0']:.2f} ± {e['y0']:.2f}) px on {meta['fb_w']}×{meta['fb_h']}")
-    lines.append(f"  σ = ({fit['sx']:.2f} ± {e['sx']:.2f}, "
-                 f"{fit['sy']:.2f} ± {e['sy']:.2f}) px")
+    lines.append(
+        f"  μ = ({fit['x0']:.2f} ± {e['x0']:.2f}, "
+        f"{fit['y0']:.2f} ± {e['y0']:.2f}) px on {meta['fb_w']}×{meta['fb_h']}"
+    )
+    lines.append(f"  σ = ({fit['sx']:.2f} ± {e['sx']:.2f}, {fit['sy']:.2f} ± {e['sy']:.2f}) px")
     lines.append(f"  FWHM = ({fit['fwhm_x']:.1f}, {fit['fwhm_y']:.1f}) px")
     lines.append(f"  θ = {np.degrees(fit['theta']):.2f}° ± {np.degrees(e['theta']):.2f}°")
-    lines.append(f"  amplitude A = {fit['A']:.0f} ± {e['A']:.0f}, "
-                 f"baseline B = {fit['B']:.0f} ± {e['B']:.0f}")
+    lines.append(
+        f"  amplitude A = {fit['A']:.0f} ± {e['A']:.0f}, baseline B = {fit['B']:.0f} ± {e['B']:.0f}"
+    )
     lines.append(f"  R² = {fit['r2']:.4f}")
     cx = meta["fb_w"] / 2
     cy = meta["fb_h"] / 2
-    lines.append(f"  ► offset from FB center: "
-                 f"Δx = {fit['x0'] - cx:+.1f} px, Δy = {fit['y0'] - cy:+.1f} px")
+    lines.append(
+        f"  ► offset from FB center: Δx = {fit['x0'] - cx:+.1f} px, Δy = {fit['y0'] - cy:+.1f} px"
+    )
     # Convert to mm using the project-wide assumption (passed via meta if available)
     crt_w = meta.get("crt_w_mm")
     crt_h = meta.get("crt_h_mm")
     if crt_w and crt_h:
         dx_mm = (fit["x0"] - cx) * crt_w / meta["fb_w"]
         dy_mm = (fit["y0"] - cy) * crt_h / meta["fb_h"]
-        lines.append(f"  ► offset on CRT face (assumed {crt_w}×{crt_h} mm): "
-                     f"Δx = {dx_mm:+.2f} mm, Δy = {dy_mm:+.2f} mm")
+        lines.append(
+            f"  ► offset on CRT face (assumed {crt_w}×{crt_h} mm): "
+            f"Δx = {dx_mm:+.2f} mm, Δy = {dy_mm:+.2f} mm"
+        )
         eff_d_x = fit["fwhm_x"] * crt_w / meta["fb_w"]
         eff_d_y = fit["fwhm_y"] * crt_h / meta["fb_h"]
-        lines.append(f"  ► effective FWHM diameter on CRT: "
-                     f"{eff_d_x:.1f} × {eff_d_y:.1f} mm")
+        lines.append(f"  ► effective FWHM diameter on CRT: {eff_d_x:.1f} × {eff_d_y:.1f} mm")
 
 
 def report_decay(fit, lines):
@@ -339,8 +344,9 @@ def report_prbs(fit, lines):
         lines.append("  (no PRBS data)")
         return
     lines.append(f"  peak lag k = {fit['peak_lag']} bit(s)")
-    lines.append(f"  1/e fall-off width = {fit['tau_lag']} bits "
-                 f"(at 50 ms/bit → {fit['tau_lag']*50} ms)")
+    lines.append(
+        f"  1/e fall-off width = {fit['tau_lag']} bits (at 50 ms/bit → {fit['tau_lag'] * 50} ms)"
+    )
     h_pretty = " ".join(f"{v:+.3f}" for v in fit["h_norm"])
     lines.append(f"  h_norm: {h_pretty}")
 
@@ -406,7 +412,7 @@ def main():
     if prbs_fit:
         with (run_dir / "prbs_h.csv").open("w") as f:
             f.write("lag,h,h_norm\n")
-            for k, (h, hn) in enumerate(zip(prbs_fit["h"], prbs_fit["h_norm"])):
+            for k, (h, hn) in enumerate(zip(prbs_fit["h"], prbs_fit["h_norm"], strict=True)):
                 f.write(f"{k},{h:.4f},{hn:.4f}\n")
 
     lines.append("=" * 64)

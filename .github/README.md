@@ -274,7 +274,15 @@ esp32-crt-signal-core/
 │   ├── crt_stimulus_test.c
 │   └── line_policy_test.c
 ├── tools/
-│   ├── img2fb.py                           # Image-to-framebuffer helper
+│   ├── prc/                                # Physical Reservoir Computing pipeline
+│   │   ├── capture.py                      #   UART capture → CSV
+│   │   ├── analyze.py                      #   Gaussian / decay / impulse fits
+│   │   └── memory_capacity.py              #   Ridge MC benchmark
+│   ├── assets/
+│   │   ├── img2fb.py                       # Image-to-framebuffer helper
+│   │   └── img2rgb332.py                   # RGB332 converter
+│   ├── analysis/                           # Webcam capture post-processing (cv2/R)
+│   ├── setup/                              # udev rules + capture rig shell scripts
 │   └── crt_monitor/                        # Webcam-backed monitor dashboard
 ├── docs/                                   # Reference docs
 ├── .clang-format                           # Code style (embedded C)

@@ -110,14 +110,12 @@ def emit_header(out_path: Path, symbol: str, pixels: np.ndarray, src: Path) -> N
         " * Memory: place in DRAM via DRAM_ATTR for cache-stable hot-path reads. */\n"
         "\n"
         "#include <stdint.h>\n"
-        "#include \"esp_attr.h\"\n"
+        '#include "esp_attr.h"\n'
         "\n"
         f"#define {symbol.upper()}_WIDTH  {w}\n"
         f"#define {symbol.upper()}_HEIGHT {h}\n"
         "\n"
-        f"DRAM_ATTR static const uint8_t {symbol}[{w}*{h}] = {{\n"
-        + "\n".join(body)
-        + "\n};\n"
+        f"DRAM_ATTR static const uint8_t {symbol}[{w}*{h}] = {{\n" + "\n".join(body) + "\n};\n"
     )
     out_path.write_text(text)
 
@@ -135,7 +133,9 @@ def main() -> None:
     rgb = np.array(img, dtype=np.uint8)
     pixels = quantise_rgb332(rgb, dither=not args.no_dither)
     emit_header(args.output, args.symbol, pixels, args.input)
-    print(f"wrote {args.output}: {pixels.shape[1]}x{pixels.shape[0]} RGB332 (dither={not args.no_dither})")
+    print(
+        f"wrote {args.output}: {pixels.shape[1]}x{pixels.shape[0]} RGB332 (dither={not args.no_dither})"
+    )
 
 
 if __name__ == "__main__":
