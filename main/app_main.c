@@ -699,8 +699,8 @@ static void app_ir_area_sweep(void)
  * needed for reservoir computing beyond a pure linear filter. */
 static void app_ir_prbs_capture(void)
 {
-    const int kTicks = 256;
-    const int kSettleMs = 350; /* > 250ms phosphor tau → discriminated levels */
+    const int kTicks = 2048;   /* PRC-grade dataset; 8× the old 256 fixes overfit */
+    const int kSettleMs = 150; /* < τ_sensor ≈ 440 ms → exposes fading memory */
     /* Heavy oversampling: 64 ADC reads averaged → ~8x noise SNR improvement
      * via 1/√N over the previous N=8. Adds ~13 ms per tick (within settle). */
     const int kSampleN = 64;
@@ -723,8 +723,8 @@ static void app_ir_prbs_capture(void)
     gpio_set_pull_mode(APP_IR_PIN, GPIO_PULLDOWN_ONLY);
     esp_rom_delay_us(500);
 
-    static uint8_t lvl_seq[256] = {0};
-    static int adc_seq[256] = {0};
+    static uint8_t lvl_seq[2048] = {0};
+    static int adc_seq[2048] = {0};
     for (int t = 0; t < kTicks; ++t) {
         /* Consume 2 LFSR bits to choose 1 of 4 levels. */
         const uint8_t lvl_idx = (uint8_t)(lfsr & 0x3U);

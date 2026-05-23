@@ -385,8 +385,8 @@ def main():
     ap.add_argument(
         "--duration",
         type=float,
-        default=200.0,
-        help="seconds of UART to capture (cal+area+xy+decay(3×9s)+gprbs(90s) ≈ 160s)",
+        default=420.0,
+        help="seconds of UART to capture (cal+area+xy+decay+gprbs[2048×150ms≈5min] ≈ 6min)",
     )
     ap.add_argument(
         "--no-reset", action="store_true", help="skip DTR/RTS pulse (already-running session)"
