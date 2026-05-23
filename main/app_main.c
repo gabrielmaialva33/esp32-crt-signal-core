@@ -158,8 +158,9 @@ IRAM_ATTR __attribute__((unused)) static void stimulus_frame_hook(uint32_t frame
      * Counter-based stage advance avoids a runtime divide every frame
      * inside this IRAM hook. */
     static const crt_stimulus_pattern_t kCycle[] = {
-        CRT_STIMULUS_PATTERN_CHECKER, CRT_STIMULUS_PATTERN_PRBS, CRT_STIMULUS_PATTERN_IMPULSE,
-        CRT_STIMULUS_PATTERN_CHIRP,   CRT_STIMULUS_PATTERN_FRAME_MARKERS,
+        CRT_STIMULUS_PATTERN_CHECKER,       CRT_STIMULUS_PATTERN_PRBS,
+        CRT_STIMULUS_PATTERN_IMPULSE,       CRT_STIMULUS_PATTERN_CHIRP,
+        CRT_STIMULUS_PATTERN_FRAME_MARKERS,
     };
     static uint32_t s_frame_in_stage = 0;
     static uint8_t s_stage = 0;
@@ -291,8 +292,8 @@ static void uart_upload_shutdown(void)
 /* Optical centroid (in FB pixels) measured from the XY map gaussian fit.
  * Override here when the ring is repositioned. The indicator + decay + PRBS
  * disks all use this center so the IR LEDs land on top of the markers. */
-#define APP_RING_CENTER_X    135
-#define APP_RING_CENTER_Y    125
+#define APP_RING_CENTER_X 135
+#define APP_RING_CENTER_Y 125
 
 static inline void app_overlay_put(crt_fb_surface_t *fb, int x, int y, uint8_t idx)
 {
@@ -357,12 +358,12 @@ static void app_draw_ring_indicator(crt_fb_surface_t *fb)
  * different domain than GPIO25/I2S0/DAC, so it runs free of the composite
  * pipeline. The task is pinned to Core 0 so it never steals cycles from
  * the prep_task on Core 1. */
-#define APP_IR_PIN          GPIO_NUM_32
-#define APP_IR_ADC_UNIT     ADC_UNIT_1
-#define APP_IR_ADC_CHANNEL  ADC_CHANNEL_4
-#define APP_IR_SAMPLE_MS    100U
-#define APP_IR_BURST_N      16
-#define APP_IR_DRAIN_MS     20U
+#define APP_IR_PIN         GPIO_NUM_32
+#define APP_IR_ADC_UNIT    ADC_UNIT_1
+#define APP_IR_ADC_CHANNEL ADC_CHANNEL_4
+#define APP_IR_SAMPLE_MS   100U
+#define APP_IR_BURST_N     16
+#define APP_IR_DRAIN_MS    20U
 
 typedef enum {
     APP_IR_MODE_AUTO = 0,
@@ -422,13 +423,17 @@ static int app_ir_capture_window(uint32_t window_ms, int *out_min, int *out_max)
     while ((esp_timer_get_time() / 1000) < end_ms) {
         const int v = app_ir_ring_measure();
         sum += v;
-        if (v < vmin) vmin = v;
-        if (v > vmax) vmax = v;
+        if (v < vmin)
+            vmin = v;
+        if (v > vmax)
+            vmax = v;
         n++;
         vTaskDelay(pdMS_TO_TICKS(50));
     }
-    if (out_min) *out_min = vmin;
-    if (out_max) *out_max = vmax;
+    if (out_min)
+        *out_min = vmin;
+    if (out_max)
+        *out_max = vmax;
     return (n > 0) ? (int)(sum / n) : 0;
 }
 
@@ -522,8 +527,8 @@ static void app_ir_ring_calibrate(void)
  * true centroid of the IR ring's optical footprint on the CRT face. */
 static void app_ir_xy_map(void)
 {
-    const int kGrid = 16;   /* 16x16 = 256 measurements */
-    const int kProbeR = 6;  /* small disc, smaller than ring radius */
+    const int kGrid = 16;  /* 16x16 = 256 measurements */
+    const int kProbeR = 6; /* small disc, smaller than ring radius */
     const int kSettleMs = 80;
     const int kSampleN = 16;
 
@@ -541,8 +546,8 @@ static void app_ir_xy_map(void)
     for (int j = 0; j < kGrid; ++j) {
         const int cy = (int)(((long)j * (s_fb.height - 2 * kProbeR - 1)) / (kGrid - 1)) + kProbeR;
         for (int i = 0; i < kGrid; ++i) {
-            const int cx = (int)(((long)i * (s_fb.width - 2 * kProbeR - 1)) / (kGrid - 1))
-                           + kProbeR;
+            const int cx =
+                (int)(((long)i * (s_fb.width - 2 * kProbeR - 1)) / (kGrid - 1)) + kProbeR;
             app_fb_fill(&s_fb, 0);
             app_fb_fill_ellipse(&s_fb, cx, cy, kProbeR, kProbeR, 255);
             vTaskDelay(pdMS_TO_TICKS(kSettleMs));
@@ -664,8 +669,10 @@ static void app_ir_area_sweep(void)
     /* Pick peaks for quick interpretation */
     int x_peak_idx = 0, y_peak_idx = 0;
     for (int i = 1; i < kSteps; ++i) {
-        if (x_curve[i] > x_curve[x_peak_idx]) x_peak_idx = i;
-        if (y_curve[i] > y_curve[y_peak_idx]) y_peak_idx = i;
+        if (x_curve[i] > x_curve[x_peak_idx])
+            x_peak_idx = i;
+        if (y_curve[i] > y_curve[y_peak_idx])
+            y_peak_idx = i;
     }
     const int x_peak_px = (int)(((long)x_peak_idx * (s_fb.width - kBarThickness)) / (kSteps - 1));
     const int y_peak_px = (int)(((long)y_peak_idx * (s_fb.height - kBarThickness)) / (kSteps - 1));
@@ -797,19 +804,23 @@ static void app_ir_decay_test(int trial_idx)
     int pre_min = 4095, pre_max = 0;
     long pre_sum = 0;
     for (int i = 0; i < kSwitchAt; ++i) {
-        if (buf[i] < pre_min) pre_min = buf[i];
-        if (buf[i] > pre_max) pre_max = buf[i];
+        if (buf[i] < pre_min)
+            pre_min = buf[i];
+        if (buf[i] > pre_max)
+            pre_max = buf[i];
         pre_sum += buf[i];
     }
     int post_min = 4095, post_max = 0;
     long post_sum = 0;
     for (int i = kSwitchAt; i < kSamples; ++i) {
-        if (buf[i] < post_min) post_min = buf[i];
-        if (buf[i] > post_max) post_max = buf[i];
+        if (buf[i] < post_min)
+            post_min = buf[i];
+        if (buf[i] > post_max)
+            post_max = buf[i];
         post_sum += buf[i];
     }
-    ESP_LOGI("decay", "trial=%d period_us=%u switch_idx=%d N=%d", trial_idx,
-             (unsigned)kPeriodUs, kSwitchAt, kSamples);
+    ESP_LOGI("decay", "trial=%d period_us=%u switch_idx=%d N=%d", trial_idx, (unsigned)kPeriodUs,
+             kSwitchAt, kSamples);
     ESP_LOGI("decay", "pre  (white): min=%4d max=%4d mean=%4ld", pre_min, pre_max,
              pre_sum / kSwitchAt);
     ESP_LOGI("decay", "post (decay): min=%4d max=%4d mean=%4ld", post_min, post_max,
@@ -974,7 +985,8 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
         crt_register_scanline_hook(crt_fb_scanline_hook, &s_fb);
         ESP_LOGI(TAG, "render: PRC ring placement indicator (%ux%u, OD %.0f mm, %d LEDs)",
                  APP_FB_WIDTH, APP_FB_HEIGHT, (double)APP_RING_OD_MM, APP_RING_LED_COUNT);
-        ESP_LOGI(TAG, "PRC tip  : press the IR ring onto the markers, center crosshair = ring axis");
+        ESP_LOGI(TAG,
+                 "PRC tip  : press the IR ring onto the markers, center crosshair = ring axis");
     } else {
         /* ── Tile layer as fused base + keyed overlay on top ──────────── */
 
