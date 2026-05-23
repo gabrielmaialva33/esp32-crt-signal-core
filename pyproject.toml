@@ -1,0 +1,36 @@
+[project]
+name = "esp32-crt-signal-core-tools"
+version = "0.0.1"
+description = "Host-side tooling for ESP32 CRT Signal Core (PRC pipeline, asset converters, setup helpers)."
+requires-python = ">=3.10"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["tools/captures", "tools/crt_monitor", "build", "managed_components"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "SIM", # flake8-simplify
+    "RUF", # ruff-specific
+]
+ignore = [
+    "E501",    # line length handled by formatter
+    "B008",    # function calls in argument defaults (argparse pattern)
+    "RUF001",  # ambiguous unicode chars (σ, ×, μ) are intentional math notation
+    "RUF002",  # same, in docstrings
+    "RUF003",  # same, in comments
+    "RUF005",  # list concat: spread syntax not always clearer
+    "RUF046",  # int(x) when x is int: harmless explicit cast
+    "RUF059",  # unused unpacked vars: tuple unpacking pattern (x, y, w, h)
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

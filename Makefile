@@ -128,17 +128,32 @@ test-tile:
 		tests/crt_tile_test.c components/crt_tile/crt_tile.c \
 		-o $(TEST_OUT)/crt_tile_test && $(TEST_OUT)/crt_tile_test
 
-# ── Lint ─────────────────────────────────────────────────────────────
+# ── Lint / Format ────────────────────────────────────────────────────
 
-.PHONY: format lint
+PY_SOURCES := tools/
 
-format:  ## Run clang-format on all project sources
+.PHONY: format format-c format-py lint lint-c lint-py
+
+format: format-c format-py  ## Format C + Python sources
+
+format-c:  ## clang-format on components/ + main/
 	@find components main -name '*.c' -o -name '*.h' | xargs clang-format -i
-	@echo "✓ Formatted"
+	@echo "✓ C formatted"
 
-lint:  ## Run clang-tidy on host-portable project sources
+format-py:  ## ruff format + import sort on tools/
+	@uv run --with ruff ruff format $(PY_SOURCES)
+	@uv run --with ruff ruff check --fix --select I $(PY_SOURCES)
+	@echo "✓ Python formatted"
+
+lint: lint-c lint-py  ## Lint C + Python sources
+
+lint-c:  ## clang-tidy on host-portable project sources
 	@clang-tidy $(LINT_SOURCES) --quiet -- $(TEST_CFLAGS) $(TEST_INC)
-	@echo "✓ Lint done"
+	@echo "✓ C lint done"
+
+lint-py:  ## ruff check on tools/
+	@uv run --with ruff ruff check $(PY_SOURCES)
+	@echo "✓ Python lint done"
 
 # ── Help ─────────────────────────────────────────────────────────────
 
