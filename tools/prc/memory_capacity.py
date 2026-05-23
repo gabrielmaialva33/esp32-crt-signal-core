@@ -75,8 +75,14 @@ def build_state_matrix(adc: np.ndarray, window: int) -> np.ndarray:
 
 
 def mc_at_delay(bits: np.ndarray, X: np.ndarray, k: int, ridge: float) -> tuple[float, float]:
-    """Train ridge regression to predict u[t-k] from x[t]; return (R^2, var(u))."""
-    # Align: X has n rows starting at t = window-1. We need t-k valid.
+    """Compute Jaeger memory capacity at delay k: MC_k = corr²(u[t-k], û_k(t)).
+
+    Trains a ridge readout on a 70/30 sequential split, then reports the
+    squared Pearson correlation between the held-out target and prediction.
+    For an unbiased OLS predictor this equals R² of the held-out set; for
+    ridge with λ > 0 (biased predictor), corr² > R², and corr² is the
+    quantity Jaeger (2002) defines as memory capacity.
+    """
     n = X.shape[0]
     window = X.shape[1]
     t_offsets = np.arange(window - 1, window - 1 + n)
@@ -86,27 +92,32 @@ def mc_at_delay(bits: np.ndarray, X: np.ndarray, k: int, ridge: float) -> tuple[
     Xv = X[valid]
     target_idx = t_offsets[valid] - k
     yv = bits[target_idx].astype(float)
-    yv_centered = yv - yv.mean()
-    if yv_centered.var() == 0:
+    if yv.var() == 0:
         return 0.0, 0.0
     # Train/test split — first 70% train, last 30% test
     n_tr = int(len(Xv) * 0.7)
     Xt, yt = Xv[:n_tr], yv[:n_tr]
     Xv2, yv2 = Xv[n_tr:], yv[n_tr:]
-    # Center features
+    # Standardize features (ridge penalty is scale-dependent; columns at
+    # different lags carry different variance, so we want unit-variance
+    # features under L2 penalty).
     mu_X = Xt.mean(axis=0)
-    Xt_c = Xt - mu_X
-    Xv_c = Xv2 - mu_X
+    sigma_X = Xt.std(axis=0)
+    sigma_X[sigma_X == 0] = 1.0
+    Xt_c = (Xt - mu_X) / sigma_X
+    Xv_c = (Xv2 - mu_X) / sigma_X
     mu_y = yt.mean()
     yt_c = yt - mu_y
     # Ridge regression closed form
     A = Xt_c.T @ Xt_c + ridge * np.eye(window)
     w = np.linalg.solve(A, Xt_c.T @ yt_c)
     y_pred = Xv_c @ w + mu_y
-    ss_res = np.sum((yv2 - y_pred) ** 2)
-    ss_tot = np.sum((yv2 - yv2.mean()) ** 2)
-    r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
-    return max(r2, 0.0), float(yv.var())
+    # Jaeger MC: squared Pearson correlation between target and prediction.
+    if np.std(y_pred) == 0:
+        return 0.0, float(yv.var())
+    corr = np.corrcoef(yv2, y_pred)[0, 1]
+    mc_k = float(corr * corr) if np.isfinite(corr) else 0.0
+    return mc_k, float(yv.var())
 
 
 def main():
@@ -116,6 +127,12 @@ def main():
         "--window", type=int, default=8, help="readout window size (number of past ADC samples)"
     )
     ap.add_argument("--max-delay", type=int, default=15)
+    ap.add_argument("--min-delay", type=int, default=1, help="start delay (Jaeger: k>=1)")
+    ap.add_argument(
+        "--include-zero",
+        action="store_true",
+        help="include k=0 (feedthrough) in total MC — non-standard",
+    )
     ap.add_argument("--ridge", type=float, default=1e-3)
     args = ap.parse_args()
 
@@ -150,31 +167,40 @@ def main():
         adc = np.array(adcs, dtype=float)
         print(f"# gray-level PRBS: {len(lvls)} ticks, ADC range {adc.min():.0f}..{adc.max():.0f}")
         X = build_state_matrix(adc, args.window)
-        mc_per_k = []
-        for k in range(args.max_delay + 1):
-            r2, _ = mc_at_delay(lvls, X, k, args.ridge)
-            mc_per_k.append(r2)
-        total_mc = sum(mc_per_k)
+        k_start = 0 if args.include_zero else args.min_delay
+        k_mc = []
+        for k in range(k_start, args.max_delay + 1):
+            mc_k, _ = mc_at_delay(lvls, X, k, args.ridge)
+            k_mc.append((k, mc_k))
+        total_mc = sum(mc for _, mc in k_mc)
+        rank_X = int(np.linalg.matrix_rank(X))
+        bound = min(rank_X, args.window)
         print("=" * 64)
         print("GRAY-LEVEL PRBS — predict u[t-k] (level idx 0..3) from x[t]")
-        print(f"  window W = {args.window}, ridge λ = {args.ridge}")
+        print(
+            f"  window W = {args.window}, ridge λ = {args.ridge}, k = {k_start}..{args.max_delay}"
+        )
         print("=" * 64)
-        for k, mc in enumerate(mc_per_k):
+        for k, mc in k_mc:
             bar = "#" * int(mc * 40)
             print(f"  k={k:2d} | {mc:.4f}  {bar}")
         print("=" * 64)
-        print(f"  total MC = {total_mc:.4f}")
+        print(f"  total MC (corr²) = {total_mc:.4f}")
         print(
-            f"  upper bound (W) = {args.window}, ratio = {100 * total_mc / args.window:.1f}% of W"
+            f"  upper bound = min(rank(X)={rank_X}, W={args.window}) = {bound};"
+            f" ratio = {100 * total_mc / bound:.1f}%"
         )
         print("=" * 64)
 
         out_csv = run_dir / "mc_gray.csv"
         with out_csv.open("w") as f:
             f.write("delay_k,mc\n")
-            for k, mc in enumerate(mc_per_k):
+            for k, mc in k_mc:
                 f.write(f"{k},{mc:.6f}\n")
-            f.write(f"# total_mc={total_mc:.6f} window={args.window} ridge={args.ridge}\n")
+            f.write(
+                f"# total_mc={total_mc:.6f} window={args.window} "
+                f"rank_X={rank_X} ridge={args.ridge} k_start={k_start}\n"
+            )
         print(f"# saved {out_csv.relative_to(PROJECT_ROOT)}")
         return
 
@@ -185,40 +211,44 @@ def main():
             f"# multi-input mode: {bits_matrix.shape[0]} ticks × {bits_matrix.shape[1]} quadrants"
         )
         X = build_state_matrix(adc, args.window)
+        k_start = 0 if args.include_zero else args.min_delay
+        k_range = range(k_start, args.max_delay + 1)
+        rank_X = int(np.linalg.matrix_rank(X))
+        bound = min(rank_X, args.window)
         total_mc_global = 0.0
-        per_quadrant = []
+        per_quadrant = []  # per_quadrant[q] = [(k, mc), ...]
         for q in range(bits_matrix.shape[1]):
             bits_q = bits_matrix[:, q]
-            mc_per_k = []
-            for k in range(args.max_delay + 1):
-                r2, _ = mc_at_delay(bits_q, X, k, args.ridge)
-                mc_per_k.append(r2)
-            tot = sum(mc_per_k)
-            per_quadrant.append(mc_per_k)
+            k_mc = []
+            for k in k_range:
+                mc_k, _ = mc_at_delay(bits_q, X, k, args.ridge)
+                k_mc.append((k, mc_k))
+            tot = sum(mc for _, mc in k_mc)
+            per_quadrant.append(k_mc)
             total_mc_global += tot
             print(f"\n--- quadrant {q} (TL=0,TR=1,BL=2,BR=3) — MC = {tot:.4f} ---")
-            for k, mc in enumerate(mc_per_k):
+            for k, mc in k_mc:
                 bar = "#" * int(mc * 40)
                 print(f"  k={k:2d} | {mc:.4f}  {bar}")
         print("\n" + "=" * 64)
-        print(f"  total MC across 4 quadrants = {total_mc_global:.4f}")
-        print(f"  theoretical upper bound     = {4 * args.window:.1f} (4 × W)")
-        print(
-            f"  ratio                       = "
-            f"{100 * total_mc_global / (4 * args.window):.1f}% of 4·W"
-        )
+        print(f"  total MC across {bits_matrix.shape[1]} channels = {total_mc_global:.4f}")
+        # Note: parallel tasks share the same state X; upper bound is rank(X),
+        # NOT n_channels * W. The 4·W bound is wrong because the 4 tasks
+        # cannot collectively exceed the state's effective dimensionality.
+        print(f"  upper bound (shared state) = min(rank(X)={rank_X}, W={args.window}) = {bound}")
+        print(f"  ratio = {100 * total_mc_global / bound:.1f}% of bound")
         print("=" * 64)
 
         out_csv = run_dir / "mc_multi.csv"
         with out_csv.open("w") as f:
             f.write("delay_k," + ",".join(f"q{q}" for q in range(len(per_quadrant))) + "\n")
-            for k in range(args.max_delay + 1):
-                f.write(
-                    f"{k},"
-                    + ",".join(f"{per_quadrant[q][k]:.6f}" for q in range(len(per_quadrant)))
-                    + "\n"
-                )
-            f.write(f"# total_mc={total_mc_global:.6f} window={args.window} ridge={args.ridge}\n")
+            for idx, k in enumerate(k_range):
+                row = ",".join(f"{per_quadrant[q][idx][1]:.6f}" for q in range(len(per_quadrant)))
+                f.write(f"{k},{row}\n")
+            f.write(
+                f"# total_mc={total_mc_global:.6f} window={args.window} "
+                f"rank_X={rank_X} ridge={args.ridge} k_start={k_start}\n"
+            )
         print(f"# saved {out_csv.relative_to(PROJECT_ROOT)}")
         return
 
@@ -231,35 +261,41 @@ def main():
         sys.exit(2)
 
     X = build_state_matrix(adc, args.window)
-    mc_per_k = []
-    for k in range(args.max_delay + 1):
-        r2, _ = mc_at_delay(bits, X, k, args.ridge)
-        mc_per_k.append(r2)
-    total_mc = sum(mc_per_k)
+    k_start = 0 if args.include_zero else args.min_delay
+    rank_X = int(np.linalg.matrix_rank(X))
+    bound = min(rank_X, args.window)
+    k_mc = []
+    for k in range(k_start, args.max_delay + 1):
+        mc_k, _ = mc_at_delay(bits, X, k, args.ridge)
+        k_mc.append((k, mc_k))
+    total_mc = sum(mc for _, mc in k_mc)
 
     # Output table
     print("=" * 64)
     print(f"MEMORY CAPACITY of CRT-IR reservoir  (n_bits={len(bits)})")
-    print(f"  window W = {args.window}  ridge λ = {args.ridge}")
+    print(f"  window W = {args.window}  ridge λ = {args.ridge}  k = {k_start}..{args.max_delay}")
     print("=" * 64)
-    print("  delay k | MC(k) = R²(û[t-k] | x[t])")
-    print("  --------+--------------------------")
-    for k, mc in enumerate(mc_per_k):
+    print("  delay k | MC(k) = corr²(u[t-k], û[t-k] | x[t])")
+    print("  --------+--------------------------------------")
+    for k, mc in k_mc:
         bar = "#" * int(mc * 40)
         print(f"  {k:7d} | {mc:.4f}  {bar}")
-    print("  --------+--------------------------")
+    print("  --------+--------------------------------------")
     print(f"   total  | MC = Σ_k MC(k) = {total_mc:.4f}")
-    print(f"   max     | W = {args.window} (theoretical upper bound)")
-    print(f"   ratio  | {total_mc / args.window * 100:.1f}% of W")
+    print(f"   bound  | min(rank(X)={rank_X}, W={args.window}) = {bound}")
+    print(f"   ratio  | {100 * total_mc / bound:.1f}% of bound")
     print("=" * 64)
 
     # Save CSV
     out_csv = run_dir / "mc.csv"
     with out_csv.open("w") as f:
         f.write("delay_k,mc\n")
-        for k, mc in enumerate(mc_per_k):
+        for k, mc in k_mc:
             f.write(f"{k},{mc:.6f}\n")
-        f.write(f"# total_mc={total_mc:.6f} window={args.window} ridge={args.ridge}\n")
+        f.write(
+            f"# total_mc={total_mc:.6f} window={args.window} "
+            f"rank_X={rank_X} ridge={args.ridge} k_start={k_start}\n"
+        )
     print(f"# saved {out_csv.relative_to(PROJECT_ROOT)}")
 
 

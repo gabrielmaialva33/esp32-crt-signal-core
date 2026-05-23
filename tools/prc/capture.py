@@ -382,7 +382,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", default="/dev/ttyACM1")
     ap.add_argument("--baud", type=int, default=115200)
-    ap.add_argument("--duration", type=float, default=22.0)
+    ap.add_argument(
+        "--duration",
+        type=float,
+        default=200.0,
+        help="seconds of UART to capture (cal+area+xy+decay(3×9s)+gprbs(90s) ≈ 160s)",
+    )
     ap.add_argument(
         "--no-reset", action="store_true", help="skip DTR/RTS pulse (already-running session)"
     )

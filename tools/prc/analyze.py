@@ -52,7 +52,39 @@ def gauss2d_rot(xy, A, x0, y0, sx, sy, theta, B):
 
 
 def exp_decay(t, A, tau, B):
+    """Single-exponential decay: A·exp(-t/τ) + B."""
     return A * np.exp(-t / tau) + B
+
+
+def biexp_decay(t, A1, tau1, A2, tau2, B):
+    """Bi-exponential decay: A1·exp(-t/τ1) + A2·exp(-t/τ2) + B.
+
+    Phosphor + electronics + ambient drift typically have two well-separated
+    time constants. τ1 is the fast component (phosphor primary), τ2 is the
+    slow tail (deep traps + IR-LED thermal lag + ADC drift).
+    """
+    return A1 * np.exp(-t / tau1) + A2 * np.exp(-t / tau2) + B
+
+
+def kww_decay(t, A, tau, beta, B):
+    """Kohlrausch–Williams–Watts (stretched exponential): A·exp(-(t/τ)^β) + B.
+
+    β ∈ (0, 1] controls dispersiveness. β = 1 → single exponential. β < 1
+    indicates a broad distribution of relaxation times — typical of disordered
+    phosphors (Phillips 1996, Rep. Prog. Phys. 59, 1133).
+    """
+    return A * np.exp(-((t / tau) ** beta)) + B
+
+
+def aicc(n: int, k: int, ss_res: float) -> float:
+    """Corrected Akaike Information Criterion (small-sample-friendly).
+
+    AICc = n·ln(SSR/n) + 2k + 2k(k+1)/(n-k-1)
+    Lower is better. Use for model selection between exp/biexp/KWW.
+    """
+    if n <= k + 1 or ss_res <= 0:
+        return float("inf")
+    return n * np.log(ss_res / n) + 2 * k + 2 * k * (k + 1) / (n - k - 1)
 
 
 # ----------------------------------------------------------------------------
@@ -192,9 +224,10 @@ def fit_xy(matrix: np.ndarray, meta: dict):
     ss_tot = np.sum((z - z.mean()) ** 2)
     r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
 
-    # FWHM along the principal axes
-    fwhm_x = 2.355 * popt[3]
-    fwhm_y = 2.355 * popt[4]
+    # FWHM along the principal axes: factor is exactly 2·sqrt(2·ln(2))
+    FWHM_FACTOR = 2.0 * np.sqrt(2.0 * np.log(2.0))  # 2.354820045...
+    fwhm_x = FWHM_FACTOR * popt[3]
+    fwhm_y = FWHM_FACTOR * popt[4]
 
     return {
         "A": popt[0],
@@ -215,7 +248,12 @@ def fit_xy(matrix: np.ndarray, meta: dict):
 
 
 def fit_decay(decay: dict):
-    """Joint exponential fit on the post-switch portion of every trial."""
+    """Per-trial exponential fit on the post-switch portion of every trial.
+
+    Each trial fits its own (A, τ, B) independently. Across-trial τ is
+    summarized by mean ± std. For a joint fit with shared τ, see
+    docs/research/prc_math_review.md I2.
+    """
     t_us = decay["t_us"]
     phase = decay["phase"]
     trials = decay["trials"]
@@ -225,6 +263,7 @@ def fit_decay(decay: dict):
     t = (t_us[mask] - t_us[mask][0]) / 1e6  # seconds, starting at switch
 
     fits = []
+    n_samples = len(t)
     for col in range(trials.shape[1]):
         y = trials[mask, col]
         if np.all(y == 0):
@@ -232,45 +271,143 @@ def fit_decay(decay: dict):
         A0 = y[0] - y[-1]
         B0 = y[-1]
         tau0 = max((t[-1] - t[0]) / 5, 1e-3)
+        # Fit all three models; pick by AICc.
+        candidates = []
+        # Single exponential
         try:
             popt, pcov = curve_fit(exp_decay, t, y, p0=(A0, tau0, B0), maxfev=5000)
-            perr = np.sqrt(np.diag(pcov))
             y_pred = exp_decay(t, *popt)
-            ss_res = np.sum((y - y_pred) ** 2)
-            ss_tot = np.sum((y - y.mean()) ** 2)
+            ss_res = float(np.sum((y - y_pred) ** 2))
+            ss_tot = float(np.sum((y - y.mean()) ** 2))
             r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
-            fits.append(
-                {"trial": col, "A": popt[0], "tau": popt[1], "B": popt[2], "err": perr, "r2": r2}
+            candidates.append(
+                {
+                    "model": "exp",
+                    "params": {"A": popt[0], "tau": popt[1], "B": popt[2]},
+                    "err": dict(zip(("A", "tau", "B"), np.sqrt(np.diag(pcov)), strict=True)),
+                    "r2": r2,
+                    "ss_res": ss_res,
+                    "aicc": aicc(n_samples, 3, ss_res),
+                }
             )
-        except Exception as e:
-            fits.append({"trial": col, "error": str(e)})
+        except Exception:
+            pass
+        # Bi-exponential (split A0 70/30, τ1 fast ≈ τ0/5, τ2 slow ≈ τ0·5)
+        try:
+            p0 = (0.7 * A0, tau0 / 5, 0.3 * A0, tau0 * 5, B0)
+            bounds = (
+                (0, 1e-4, 0, 1e-4, -np.inf),
+                (np.inf, np.inf, np.inf, np.inf, np.inf),
+            )
+            popt, pcov = curve_fit(biexp_decay, t, y, p0=p0, bounds=bounds, maxfev=10000)
+            y_pred = biexp_decay(t, *popt)
+            ss_res = float(np.sum((y - y_pred) ** 2))
+            r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
+            # Sort components so τ1 < τ2
+            if popt[1] > popt[3]:
+                popt = np.array([popt[2], popt[3], popt[0], popt[1], popt[4]])
+            candidates.append(
+                {
+                    "model": "biexp",
+                    "params": {
+                        "A1": popt[0],
+                        "tau1": popt[1],
+                        "A2": popt[2],
+                        "tau2": popt[3],
+                        "B": popt[4],
+                    },
+                    "err": dict(
+                        zip(
+                            ("A1", "tau1", "A2", "tau2", "B"),
+                            np.sqrt(np.diag(pcov)),
+                            strict=True,
+                        )
+                    ),
+                    "r2": r2,
+                    "ss_res": ss_res,
+                    "aicc": aicc(n_samples, 5, ss_res),
+                }
+            )
+        except Exception:
+            pass
+        # KWW stretched exponential
+        try:
+            p0 = (A0, tau0, 0.7, B0)
+            bounds = ((0, 1e-4, 0.05, -np.inf), (np.inf, np.inf, 1.0, np.inf))
+            popt, pcov = curve_fit(kww_decay, t, y, p0=p0, bounds=bounds, maxfev=10000)
+            y_pred = kww_decay(t, *popt)
+            ss_res = float(np.sum((y - y_pred) ** 2))
+            r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
+            candidates.append(
+                {
+                    "model": "kww",
+                    "params": {
+                        "A": popt[0],
+                        "tau": popt[1],
+                        "beta": popt[2],
+                        "B": popt[3],
+                    },
+                    "err": dict(
+                        zip(("A", "tau", "beta", "B"), np.sqrt(np.diag(pcov)), strict=True)
+                    ),
+                    "r2": r2,
+                    "ss_res": ss_res,
+                    "aicc": aicc(n_samples, 4, ss_res),
+                }
+            )
+        except Exception:
+            pass
+
+        if not candidates:
+            fits.append({"trial": col, "error": "all model fits failed"})
+            continue
+
+        best = min(candidates, key=lambda c: c["aicc"])
+        fits.append(
+            {
+                "trial": col,
+                "best_model": best["model"],
+                "candidates": candidates,
+                "best": best,
+            }
+        )
     return {"fits": fits, "t": t}
 
 
 def fit_prbs(prbs: dict, max_lag: int = 16):
-    """Impulse response via normalized cross-correlation of bits → ADC."""
+    """Impulse response via cross-correlation of bits → ADC.
+
+    Canonical white-input estimator: ĥ[k] = R_uy[k] / R_uu[0] = cov(u, y_lag_k)
+    divided by var(u). For non-white PRBS (LFSR), this is approximate; for a
+    rigorous estimate use Toeplitz FIR least squares. See
+    docs/research/prc_math_review.md C3.
+    """
     bits = prbs["bits"].astype(float)
     adc = prbs["adc"].astype(float)
     if len(bits) < max_lag + 4:
         return None
     bits = bits - bits.mean()
     adc = adc - adc.mean()
-    # Pad bits with leading zeros so cross-correlation gives positive lags
+    u_var = float(np.mean(bits * bits))  # E[(u - ū)²]
+    if u_var == 0:
+        return None
+    # Cross-correlation R_uy[k] = E[u[t] · y[t+k]], then h[k] = R_uy[k] / var(u)
     h = np.zeros(max_lag)
     for k in range(max_lag):
         if k < len(bits):
-            h[k] = np.dot(bits[: len(bits) - k], adc[k:]) / (len(bits) - k)
-    # Normalize to peak
+            r_uy = np.dot(bits[: len(bits) - k], adc[k:]) / (len(bits) - k)
+            h[k] = r_uy / u_var
+    # Normalize to peak (for plotting / τ estimation only)
     h_peak = np.max(np.abs(h))
     h_norm = h / h_peak if h_peak > 0 else h
     # Estimate τ from h: first lag where h drops below 1/e of peak
-    peak = np.argmax(np.abs(h_norm))
+    peak = int(np.argmax(np.abs(h_norm)))
     tau_lag = max_lag
     for k in range(peak, max_lag):
         if abs(h_norm[k]) < abs(h_norm[peak]) / np.e:
             tau_lag = k - peak
             break
-    return {"h": h, "h_norm": h_norm, "peak_lag": int(peak), "tau_lag": int(tau_lag)}
+    return {"h": h, "h_norm": h_norm, "peak_lag": peak, "tau_lag": int(tau_lag)}
 
 
 # ----------------------------------------------------------------------------
@@ -316,26 +453,65 @@ def report_xy(fit, meta, lines):
         lines.append(f"  ► effective FWHM diameter on CRT: {eff_d_x:.1f} × {eff_d_y:.1f} mm")
 
 
+def _summarize_best(best: dict) -> str:
+    """Format winning-model params + R² for the decay report."""
+    p = best["params"]
+    err = best["err"]
+    if best["model"] == "exp":
+        return (
+            f"exp: τ = {p['tau'] * 1000:.1f} ± {err['tau'] * 1000:.1f} ms, "
+            f"A = {p['A']:.0f}, B = {p['B']:.0f}, R² = {best['r2']:.4f}"
+        )
+    if best["model"] == "biexp":
+        return (
+            f"biexp: τ₁ = {p['tau1'] * 1000:.1f} ± {err['tau1'] * 1000:.1f} ms, "
+            f"τ₂ = {p['tau2'] * 1000:.1f} ± {err['tau2'] * 1000:.1f} ms, "
+            f"A₁/A₂ = {p['A1']:.0f}/{p['A2']:.0f}, R² = {best['r2']:.4f}"
+        )
+    # kww
+    return (
+        f"kww: τ = {p['tau'] * 1000:.1f} ± {err['tau'] * 1000:.1f} ms, "
+        f"β = {p['beta']:.3f} ± {err['beta']:.3f}, R² = {best['r2']:.4f}"
+    )
+
+
 def report_decay(fit, lines):
-    lines.append("\n--- DECAY: exponential fit per trial ---")
+    lines.append("\n--- DECAY: per-trial fit (best of exp / biexp / KWW by AICc) ---")
     if fit is None:
         lines.append("  (no decay data)")
         return
-    taus = []
+    model_taus = {"exp": [], "biexp": [], "kww": []}
     for f in fit["fits"]:
         if "error" in f:
             lines.append(f"  trial {f['trial']}: FAILED ({f['error']})")
+            continue
+        best = f["best"]
+        aiccs = ", ".join(f"{c['model']}={c['aicc']:.1f}" for c in f["candidates"])
+        lines.append(f"  trial {f['trial']}: WINNER={best['model']}  [AICc {aiccs}]")
+        lines.append(f"    {_summarize_best(best)}")
+        # Track an "effective τ" per model for the across-trial summary.
+        if best["model"] == "exp":
+            model_taus["exp"].append(best["params"]["tau"])
+        elif best["model"] == "biexp":
+            # use slow component as the "effective" τ (dominates late decay)
+            model_taus["biexp"].append(best["params"]["tau2"])
         else:
-            tau_ms = f["tau"] * 1000
-            tau_err_ms = f["err"][1] * 1000
-            lines.append(
-                f"  trial {f['trial']}: τ = {tau_ms:.2f} ± {tau_err_ms:.2f} ms, "
-                f"A = {f['A']:.0f}, B = {f['B']:.0f}, R² = {f['r2']:.4f}"
-            )
-            taus.append(f["tau"] * 1000)
-    if taus:
-        m, s = np.mean(taus), np.std(taus)
-        lines.append(f"  ► τ across trials: {m:.2f} ± {s:.2f} ms (n={len(taus)})")
+            # KWW effective mean: τ_eff = (τ/β)·Γ(1/β); use SciPy gamma function
+            from math import gamma
+
+            p = best["params"]
+            tau_eff = (p["tau"] / p["beta"]) * gamma(1.0 / p["beta"])
+            model_taus["kww"].append(tau_eff)
+    # Across-trial summary for whichever model won most often
+    for model, taus in model_taus.items():
+        if not taus:
+            continue
+        ms = [t * 1000 for t in taus]
+        label = {"exp": "τ", "biexp": "τ₂ (slow)", "kww": "τ_eff = (τ/β)·Γ(1/β)"}[model]
+        lines.append(
+            f"  ► {model} {label} across {len(ms)} trial(s): "
+            f"{np.mean(ms):.2f} ± {np.std(ms):.2f} ms"
+        )
 
 
 def report_prbs(fit, lines):
