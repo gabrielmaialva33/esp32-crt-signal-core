@@ -69,15 +69,17 @@ uv.lock
 compile_commands.json
 
 # ── Superpowers ─────────────────────────────────────────────────────
-/docs/superpowers/*
-!/docs/superpowers/specs/
-!/docs/superpowers/specs/**
-!/docs/superpowers/plans/
-!/docs/superpowers/plans/**
-/docs/superpowers/tmp/
-.worktrees/
 .superpowers/
+
+# ── Git worktrees ───────────────────────────────────────────────────
+.worktrees/
+
+# ── Playwright ─────────────────────────────────────────────────────
 .playwright-mcp/
+
+# ── Miscellaneous ───────────────────────────────────────────────────
 .codex
+.antigravitycli
 tmp
-/tools/captures/
+tools/captures
+
