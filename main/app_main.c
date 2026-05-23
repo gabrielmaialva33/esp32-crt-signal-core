@@ -517,13 +517,8 @@ static void app_ir_ring_calibrate(void)
     s_ir_threshold = (abs_swing > 0) ? (abs_swing / 4) : 200;
     s_ir_hysteresis = (abs_swing > 0) ? (abs_swing / 8) : 80;
     s_ir_polarity = (swing >= 0) ? 1 : -1;
-    ESP_LOGI(TAG,
-             "IR cal: swing=%+d baseline=%d threshold=%d hyst=%d polarity=%+d",
-             swing,
-             s_ir_baseline,
-             s_ir_threshold,
-             s_ir_hysteresis,
-             s_ir_polarity);
+    ESP_LOGI(TAG, "IR cal: swing=%+d baseline=%d threshold=%d hyst=%d polarity=%+d", swing,
+             s_ir_baseline, s_ir_threshold, s_ir_hysteresis, s_ir_polarity);
     if (abs_swing < 30) {
         ESP_LOGW(TAG, "IR cal: |swing| < 30 LSB — ring may not be optically coupled to CRT");
     }
