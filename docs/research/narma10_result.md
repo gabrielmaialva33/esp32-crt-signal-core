@@ -6,13 +6,21 @@ Run (failing): `tmp/prc_runs/20260523_120628` (256 ticks @ 350 ms settle)
 
 ## TL;DR
 
-| Configuration                | NMSE_test | R²_test | Verdict |
-|------------------------------|-----------|---------|---------|
-| 256 ticks, 350 ms settle (old)  | 0.78  | +0.22 | FAIL (overfit, no fading memory) |
-| **2048 ticks, 150 ms settle**   | **0.25** | **+0.75** | **PASS (typical PRC range 0.2–0.4)** |
+| Configuration                  | NMSE 70/30 split | NMSE 5-fold CV | Verdict |
+|--------------------------------|------------------|----------------|---------|
+| 256 ticks, 350 ms settle (old) | 0.78             | —              | FAIL (overfit, no fading memory) |
+| **2048 ticks, 150 ms settle (run 1)** | 0.25      | **0.36 ± 0.09** | **PASS (within 0.2–0.4 PRC range)** |
+| **2048 ticks, 150 ms settle (run 2)** | 0.75      | **0.37 ± 0.09** | **PASS** |
 
 Two firmware tweaks took the system from failing to passing the standard
 PRC benchmark — no sensor change required.
+
+The 0.25 vs 0.75 swing on the single 70/30 split between the two new runs
+is a split-luck artifact: depending on which contiguous 30% of the PRBS
+ends up as test, you can land on an easy or hard segment. 5-fold sequential
+cross-validation averages this out and gives the honest number: **NMSE ≈
+0.37 ± 0.09 across both runs**, with per-fold range 0.25–0.65. Always
+report CV, not a single split.
 
 ## Task
 
@@ -33,21 +41,27 @@ with low NMSE = `mean((y_true - y_pred)²) / var(y_true)`. Reference scale:
 | 0.5 – 1.0 | weak / over-fit |
 | ≥ 1.0     | worse than predicting the mean |
 
-## Result (passing config — 2048 ticks @ 150 ms settle)
+## Result (passing config — 2048 ticks @ 150 ms settle, two independent runs)
 
 Hyperparameter sweep over `window ∈ {8, 12, 16, 24}`,
-`poly_degree ∈ {1, 2, 3}`, and `ridge λ ∈ {1e-2 … 1e+4}`:
+`poly_degree ∈ {1, 2, 3}`, and `ridge λ ∈ {1e-2 … 1e+4}`, evaluated by
+5-fold sequential CV (preserves temporal causality, averages out
+favorable splits):
 
 ```
-BEST: NMSE_test = 0.2508  (W=24, poly_degree=2, λ=10)
+Run 20260523_123912:
+  BEST CV: NMSE = 0.3627 ± 0.0878  (W=24, poly_degree=3, λ=1)
+  per-fold: [0.306, 0.522, 0.358, 0.363, 0.263]
 
-  train: n=1403   NMSE=0.33   R²=+0.67
-  test : n= 602   NMSE=0.25   R²=+0.75
+Run 20260523_130301:
+  BEST CV: NMSE = 0.3696 ± 0.0898  (W=24, poly_degree=3, λ=1)
+  per-fold: [0.250, 0.446, 0.350, 0.496, 0.306]
 ```
 
-The gap between train and test is small (0.07), meaning the model
-**generalizes**. Test R² = +0.75 puts the system squarely in published PRC
-territory.
+Both runs agree to within 1 % on the mean and converge on the same
+hyperparameters. **W=24, poly_degree=3, λ=1.0** is therefore the recommended
+operating point — not the W=24/deg=2/λ=10 we initially reported from a single
+70/30 split.
 
 ## Result (failing config — 256 ticks @ 350 ms settle)
 
@@ -131,15 +145,14 @@ To improve:
 ## Reproduction
 
 ```bash
-# Passing config (2048 ticks @ 150 ms settle)
+# Recommended hyperparameters from 5-fold CV
 uv run --with numpy python tools/prc/narma10.py \
-    --run 20260523_123912 --window 24 --poly-degree 2 --ridge 10.0
+    --run latest --window 24 --poly-degree 3 --ridge 1.0
 
-# Old failing config (256 ticks @ 350 ms settle), for the record
-uv run --with numpy python tools/prc/narma10.py \
-    --run 20260523_120628 --window 24 --poly-degree 2 --ridge 1e-2
+# 5-fold sequential CV across both passing runs
+uv run --with numpy python /tmp/narma_cv.py
 
-# Hyperparameter sweep
+# Hyperparameter sweep (single 70/30 split — superseded by CV)
 uv run --with numpy python /tmp/narma_sweep.py
 ```
 

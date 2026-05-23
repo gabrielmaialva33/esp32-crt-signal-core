@@ -92,6 +92,49 @@ def add_polynomial_features(X: np.ndarray, degree: int = 2) -> np.ndarray:
     return np.hstack(parts)
 
 
+def ridge_kfold_cv(X: np.ndarray, y: np.ndarray, k_folds: int, ridge: float) -> dict:
+    """Sequential k-fold CV. Each fold is a contiguous block — preserves
+    temporal causality, no information leaks between folds.
+
+    Returns NMSE per fold and the mean ± std. Always prefer this over a
+    single train/test split when reporting reservoir-computing benchmarks:
+    a single 70/30 split can land on a favorable test segment and give a
+    misleadingly low NMSE.
+    """
+    n = X.shape[0]
+    block = n // k_folds
+    nmses = []
+    r2s = []
+    for k in range(k_folds):
+        te_lo = k * block
+        te_hi = te_lo + block if k < k_folds - 1 else n
+        tr_idx = np.r_[np.arange(0, te_lo), np.arange(te_hi, n)]
+        te_idx = np.arange(te_lo, te_hi)
+        X_tr, y_tr = X[tr_idx], y[tr_idx]
+        X_te, y_te = X[te_idx], y[te_idx]
+        mu_X = X_tr.mean(axis=0)
+        sigma_X = X_tr.std(axis=0)
+        sigma_X[sigma_X == 0] = 1.0
+        X_tr_s = (X_tr - mu_X) / sigma_X
+        X_te_s = (X_te - mu_X) / sigma_X
+        mu_y = y_tr.mean()
+        A = X_tr_s.T @ X_tr_s + ridge * np.eye(X.shape[1])
+        w = np.linalg.solve(A, X_tr_s.T @ (y_tr - mu_y))
+        y_pred = X_te_s @ w + mu_y
+        v = float(np.var(y_te))
+        nmses.append(float(np.mean((y_te - y_pred) ** 2) / v) if v > 0 else float("inf"))
+        ss_tot = float(np.sum((y_te - y_te.mean()) ** 2))
+        r2s.append(1.0 - float(np.sum((y_te - y_pred) ** 2) / ss_tot) if ss_tot > 0 else 0.0)
+    return {
+        "k_folds": k_folds,
+        "nmse_per_fold": np.array(nmses),
+        "r2_per_fold": np.array(r2s),
+        "nmse_mean": float(np.mean(nmses)),
+        "nmse_std": float(np.std(nmses)),
+        "r2_mean": float(np.mean(r2s)),
+    }
+
+
 def ridge_train_test(X: np.ndarray, y: np.ndarray, train_frac: float, ridge: float) -> dict:
     """Train ridge readout on first train_frac, test on the rest."""
     n = X.shape[0]
@@ -162,6 +205,12 @@ def main():
         "--train-frac", type=float, default=0.7, help="fraction of ticks used for training"
     )
     ap.add_argument(
+        "--cv",
+        type=int,
+        default=5,
+        help="sequential k-fold CV folds (set to 0 to skip CV and only do 70/30 split)",
+    )
+    ap.add_argument(
         "--warmup",
         type=int,
         default=20,
@@ -219,14 +268,27 @@ def main():
     print(f"NARMA-10 (window={args.window}, ridge={args.ridge})")
     print("=" * 64)
     print(
-        f"  train: n={result['n_train']:4d}  NMSE={result['nmse_train']:.4f}  R²={result['r2_train']:+.4f}"
+        f"  70/30 train: n={result['n_train']:4d}  NMSE={result['nmse_train']:.4f}  "
+        f"R²={result['r2_train']:+.4f}"
     )
     print(
-        f"  test : n={result['n_test']:4d}  NMSE={result['nmse_test']:.4f}  R²={result['r2_test']:+.4f}"
+        f"  70/30 test : n={result['n_test']:4d}  NMSE={result['nmse_test']:.4f}  "
+        f"R²={result['r2_test']:+.4f}"
     )
+
+    if args.cv > 0:
+        cv = ridge_kfold_cv(X, y_aligned, args.cv, args.ridge)
+        per_fold = " ".join(f"{n:.3f}" for n in cv["nmse_per_fold"])
+        print("-" * 64)
+        print(
+            f"  {args.cv}-fold CV: NMSE = {cv['nmse_mean']:.4f} ± {cv['nmse_std']:.4f}  "
+            f"R² = {cv['r2_mean']:+.4f}"
+        )
+        print(f"  per-fold NMSE: [{per_fold}]")
     print("=" * 64)
     print("  Reference scale: NMSE<0.1 = excellent, 0.2-0.4 = typical PRC,")
-    print("                   >1.0 = worse than mean prediction.")
+    print("                   >1.0 = worse than mean prediction. Always trust CV mean")
+    print("                   over a single 70/30 split — split luck can swing 3x.")
     print("=" * 64)
 
     # Save predictions
