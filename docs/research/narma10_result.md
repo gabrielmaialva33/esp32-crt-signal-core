@@ -6,21 +6,34 @@ Run (failing): `tmp/prc_runs/20260523_120628` (256 ticks @ 350 ms settle)
 
 ## TL;DR
 
-| Configuration                  | NMSE 70/30 split | NMSE 5-fold CV | Verdict |
-|--------------------------------|------------------|----------------|---------|
-| 256 ticks, 350 ms settle (old) | 0.78             | —              | FAIL (overfit, no fading memory) |
-| **2048 ticks, 150 ms settle (run 1)** | 0.25      | **0.36 ± 0.09** | **PASS (within 0.2–0.4 PRC range)** |
-| **2048 ticks, 150 ms settle (run 2)** | 0.75      | **0.37 ± 0.09** | **PASS** |
+| Configuration                  | NMSE 5-fold CV (per run) |
+|--------------------------------|--------------------------|
+| 256 ticks, 350 ms settle (old) | FAIL (n=1: 0.78 single-split, severe overfit) |
+| **2048 ticks, 150 ms settle**  | **n=3 fresh: 0.38 ± 0.04** ← canonical |
 
-Two firmware tweaks took the system from failing to passing the standard
-PRC benchmark — no sensor change required.
+Two firmware tweaks (`kTicks 256→2048`, `kSettleMs 350→150`) took the
+system from failing to passing the standard PRC benchmark — no sensor
+change required.
 
-The 0.25 vs 0.75 swing on the single 70/30 split between the two new runs
-is a split-luck artifact: depending on which contiguous 30% of the PRBS
-ends up as test, you can land on an easy or hard segment. 5-fold sequential
-cross-validation averages this out and gives the honest number: **NMSE ≈
-0.37 ± 0.09 across both runs**, with per-fold range 0.25–0.65. Always
-report CV, not a single split.
+**Aggregate over 3 independent back-to-back captures
+(`tmp/prc_runs/20260523_{135300,140006,140710}`):**
+
+| Metric | Value |
+|--------|-------|
+| NARMA-10 NMSE_cv (between-run) | **0.384 ± 0.036** |
+| Within-run fold std (avg) | 0.070 |
+| MC total | **6.231 ± 0.048** out of 8 (77.9 %) |
+| gprbs swing | 825 ± 29 LSB |
+| Logistic t₀ | ~445 ms (consistent across runs) |
+
+The between-run NMSE std (0.036) is **smaller** than the within-run
+fold std (0.070), meaning the system is reproducible — most of the
+NMSE variance comes from split-luck inside any given run, not from
+the underlying physical system drifting between captures.
+
+A single 70/30 split can land on NMSE = 0.25 (lucky) or 0.75
+(unlucky) on the **same** PRBS sequence + firmware. Always report
+CV mean ± std, never a single split.
 
 ## Task
 
