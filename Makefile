@@ -136,9 +136,17 @@ PY_SOURCES := tools/
 
 format: format-c format-py  ## Format C + Python sources
 
-format-c:  ## clang-format on components/ + main/
-	@find components main -name '*.c' -o -name '*.h' | xargs clang-format -i
-	@echo "✓ C formatted"
+CLANG_FORMAT ?= $(shell command -v clang-format-18 \
+                          || ls /usr/lib/llvm18/bin/clang-format 2>/dev/null \
+                          || command -v clang-format)
+# tile_demo.h is static data; clang-format-18's heuristic misreads it as
+# Objective-C. Excluded from formatting; CI also tolerates that warning.
+C_FORMAT_SOURCES := $(shell find components main -name '*.c' -o -name '*.h' \
+                              | grep -v 'main/tile_demo.h')
+
+format-c:  ## clang-format on components/ + main/ (prefers clang-format-18 to match CI)
+	@$(CLANG_FORMAT) -i $(C_FORMAT_SOURCES)
+	@echo "✓ C formatted (using $(CLANG_FORMAT))"
 
 format-py:  ## ruff format + import sort on tools/
 	@uv run --with ruff ruff format $(PY_SOURCES)
@@ -147,8 +155,9 @@ format-py:  ## ruff format + import sort on tools/
 
 lint: lint-c lint-py  ## Lint C + Python sources
 
-lint-c:  ## clang-tidy on host-portable project sources
+lint-c:  ## clang-tidy + clang-format-18 dry-run check
 	@clang-tidy $(LINT_SOURCES) --quiet -- $(TEST_CFLAGS) $(TEST_INC)
+	@$(CLANG_FORMAT) --dry-run -Werror $(C_FORMAT_SOURCES)
 	@echo "✓ C lint done"
 
 lint-py:  ## ruff check on tools/
