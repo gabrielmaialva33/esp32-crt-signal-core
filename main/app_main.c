@@ -100,10 +100,11 @@ static void demo_sprite_atlas_fill(void)
  * pattern_table lives in rodata via tile_demo.h. 32x32 pitch enables the
  * AND-mask wraparound fast path; 32x30 visible matches NTSC/PAL active
  * lines exactly so the compose hot path lands on the 256->768 expansion. */
-#define TILE_PITCH_W   32u
-#define TILE_PITCH_H   32u
-#define TILE_VISIBLE_W 32u
-#define TILE_VISIBLE_H 30u
+#define TILE_PITCH_W          32u
+#define TILE_PITCH_H          32u
+#define TILE_VISIBLE_W        32u
+#define TILE_VISIBLE_H        30u
+#define TILE_BANK1_LUMA_BOOST 48u
 static uint8_t s_tile_nametable[TILE_PITCH_W * TILE_PITCH_H];
 static uint8_t s_tile_attrs[TILE_PITCH_W * TILE_PITCH_H];
 static uint8_t s_tile_palette_bank_1[256];
@@ -113,7 +114,8 @@ static void demo_tile_attrs_fill(void)
 {
     memset(s_tile_attrs, 0, sizeof(s_tile_attrs));
     for (uint16_t i = 0; i < 256U; ++i) {
-        s_tile_palette_bank_1[i] = (uint8_t)i;
+        const uint16_t boosted = (uint16_t)(i + TILE_BANK1_LUMA_BOOST);
+        s_tile_palette_bank_1[i] = (uint8_t)((boosted > 255U) ? 255U : boosted);
     }
     memset(&s_tile_palette_banks, 0, sizeof(s_tile_palette_banks));
     s_tile_palette_banks.banks[1] = s_tile_palette_bank_1;
@@ -1123,12 +1125,12 @@ static void app_log_diag_snapshot(void)
     if (app_uses_compose_demo()) {
         ESP_LOGI(TAG,
                  "compose_budget: mode=%s attrs=tile banks=tile scroll=h sprites=%u max/line=%u "
-                 "active=%ux%u underruns=%" PRIu32 " queue_min=%" PRIu32 " prep_max=%" PRIu32
-                 " cycles",
+                 "active=%ux%u bank1=+%u underruns=%" PRIu32 " queue_min=%" PRIu32
+                 " prep_max=%" PRIu32 " cycles",
                  k_use_rgb332_compose ? "rgb332" : "palette", (unsigned)APP_DEMO_SPRITE_COUNT,
                  (unsigned)CRT_SPRITE_DEFAULT_PERLINE, (unsigned)(TILE_VISIBLE_W * CRT_TILE_PX_W),
-                 (unsigned)(TILE_VISIBLE_H * CRT_TILE_PX_H), diag.dma_underrun_count,
-                 diag.ready_queue_min_depth, diag.prep_cycles_max);
+                 (unsigned)(TILE_VISIBLE_H * CRT_TILE_PX_H), (unsigned)TILE_BANK1_LUMA_BOOST,
+                 diag.dma_underrun_count, diag.ready_queue_min_depth, diag.prep_cycles_max);
     }
 }
 
