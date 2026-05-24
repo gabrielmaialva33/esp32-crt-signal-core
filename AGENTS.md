@@ -186,7 +186,7 @@ make lint-py
 
 - `CRT_VIDEO_STANDARD`: selects NTSC-M, PAL-M, PAL-N, or PAL-B/G timing
 - `CRT_ENABLE_COLOR`: enables chroma burst and color demo output
-- `CRT_RENDER_MODE`: selects compositor demo, direct RGB332 framebuffer, or measurement stimulus
+- `CRT_RENDER_MODE`: selects compositor demo, direct RGB332 framebuffer, RGB332 calibration card, or measurement stimulus
 - `CRT_ENABLE_UART_UPLOAD`: enables experimental UART0 raw framebuffer upload
 - `CRT_TEST_STANDARD_TOGGLE`: auto-toggle NTSC/PAL at runtime
 - `CRT_TEST_STANDARD_TOGGLE_INTERVAL_S`: toggle interval in seconds

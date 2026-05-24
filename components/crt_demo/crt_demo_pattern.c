@@ -182,6 +182,77 @@ void crt_demo_pattern_build_grayscale_ramp_row(uint8_t *pixels, size_t width)
     }
 }
 
+static uint8_t crt_demo_rgb332(uint8_t red, uint8_t green, uint8_t blue)
+{
+    return (uint8_t)(((red & 0x7U) << 5U) | ((green & 0x7U) << 2U) | (blue & 0x3U));
+}
+
+static uint8_t crt_demo_rgb332_gray(size_t index, size_t count)
+{
+    const size_t value = (count <= 1U) ? 255U : (index * 255U) / (count - 1U);
+    return crt_demo_rgb332((uint8_t)((value * 7U) / 255U), (uint8_t)((value * 7U) / 255U),
+                           (uint8_t)((value * 3U) / 255U));
+}
+
+void crt_demo_pattern_fill_rgb332_calibration_card(uint8_t *pixels, size_t width, size_t height,
+                                                   size_t stride)
+{
+    static const uint8_t k_bars[8] = {
+        0xffU, /* white */
+        0xfcU, /* yellow */
+        0x1fU, /* cyan */
+        0x1cU, /* green */
+        0xe3U, /* magenta */
+        0xe0U, /* red */
+        0x03U, /* blue */
+        0x00U, /* black */
+    };
+    const size_t bar_height = height / 3U;
+    const size_t ramp_height = (height >= 96U) ? 32U : (height / 6U);
+    const size_t ramp_start = (height > ramp_height) ? (height - ramp_height) : 0U;
+    const size_t safe_inset = (width >= 96U && height >= 96U) ? 8U : 1U;
+    const size_t center_x = width / 2U;
+    const size_t center_y = height / 2U;
+    const uint8_t dark_gray = crt_demo_rgb332(1U, 1U, 1U);
+    const uint8_t grid_gray = crt_demo_rgb332(3U, 3U, 1U);
+
+    if (pixels == NULL || width == 0U || height == 0U || stride < width) {
+        return;
+    }
+
+    for (size_t y = 0; y < height; ++y) {
+        uint8_t *row = &pixels[y * stride];
+        for (size_t x = 0; x < width; ++x) {
+            uint8_t value = dark_gray;
+            if (y < bar_height) {
+                size_t bar = (x * 8U) / width;
+                value = k_bars[bar < 8U ? bar : 7U];
+            } else if (y >= ramp_start) {
+                value = crt_demo_rgb332_gray(x, width);
+            } else {
+                if ((x % 32U) == 0U || (y % 24U) == 0U) {
+                    value = grid_gray;
+                }
+                if (((y - bar_height) % 16U) < 8U) {
+                    static const uint8_t k_phase_stripes[4] = {0xe0U, 0xfcU, 0x1fU, 0x03U};
+                    value = k_phase_stripes[(x / 8U) & 0x3U];
+                }
+            }
+
+            if (x == center_x || y == center_y) {
+                value = 0xffU;
+            }
+            if ((x >= safe_inset && x + safe_inset < width &&
+                 (y == safe_inset || y + safe_inset + 1U == height)) ||
+                (y >= safe_inset && y + safe_inset < height &&
+                 (x == safe_inset || x + safe_inset + 1U == width))) {
+                value = 0xffU;
+            }
+            row[x] = value;
+        }
+    }
+}
+
 bool crt_demo_pattern_is_ramp_region(const crt_demo_pattern_runtime_t *runtime,
                                      uint16_t active_line_index)
 {

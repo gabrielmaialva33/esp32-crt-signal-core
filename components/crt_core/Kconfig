@@ -43,6 +43,13 @@ config CRT_RENDER_MODE_RGB332_FB
         Uses the ESP_8_BIT-derived RGB332 composite color tables to render
         a 256x240 framebuffer directly, bypassing the tile compositor.
 
+config CRT_RENDER_MODE_CALIBRATION
+    bool "RGB332 calibration card"
+    depends on CRT_ENABLE_COLOR
+    help
+        Pre-renders a deterministic RGB332 calibration card with color bars,
+        phase stripes, a safe-area frame, center crosshair, and grayscale ramp.
+
 config CRT_RENDER_MODE_RGB332_COMPOSE
     bool "Tile compositor with RGB332 composite color"
     depends on CRT_ENABLE_COLOR

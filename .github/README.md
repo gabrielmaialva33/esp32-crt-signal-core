@@ -329,7 +329,7 @@ Configure these with `idf.py menuconfig`:
 |:--------------------------------------|:----------------------------------------------|
 | `CRT_VIDEO_STANDARD`                  | Selects NTSC or PAL timing                    |
 | `CRT_ENABLE_COLOR`                    | Enables chroma burst and color demo output    |
-| `CRT_RENDER_MODE`                     | Selects compositor, RGB332 FB, or stimulus    |
+| `CRT_RENDER_MODE`                     | Selects compositor, RGB332 FB/calibration, or stimulus |
 | `CRT_ENABLE_UART_UPLOAD`              | Enables experimental UART0 framebuffer upload |
 | `CRT_TEST_STANDARD_TOGGLE`            | Alternates NTSC/PAL at runtime for testing    |
 | `CRT_TEST_STANDARD_TOGGLE_INTERVAL_S` | Seconds between standard switches             |
@@ -339,6 +339,10 @@ reuses ESP_8_BIT's RGB332→composite lookup tables and APLL coefficients. PAL
 timing and sync stay owned by this project — ESP_8_BIT is only a reference for
 the DAC tables. Default is `CRT_RENDER_MODE_COMPOSE`, which exercises the
 tile/compositor pipeline.
+
+`CRT_RENDER_MODE_CALIBRATION` pre-renders a static RGB332 calibration card
+through the same RGB332 scanline hook: color bars, phase stripes, safe-area
+frame, center crosshair, and grayscale ramp for TV alignment checks.
 
 `CRT_RENDER_MODE_STIMULUS` runs `crt_stimulus` through `crt_compose` as a
 measurement layer: deterministic ramps, checkerboards, PRBS, impulses, chirps,

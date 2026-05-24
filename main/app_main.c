@@ -1,6 +1,7 @@
 #include "crt_compose.h"
 #include "crt_compose_layers.h"
 #include "crt_core.h"
+#include "crt_demo_pattern.h"
 #include "crt_fb.h"
 #include "crt_ppu.h"
 #include "crt_sprite.h"
@@ -45,6 +46,11 @@ static const bool k_use_rgb332_framebuffer = CONFIG_CRT_RENDER_MODE_RGB332_FB;
 #else
 static const bool k_use_rgb332_framebuffer = false;
 #endif
+#if CONFIG_CRT_RENDER_MODE_CALIBRATION
+static const bool k_use_calibration_card = CONFIG_CRT_RENDER_MODE_CALIBRATION;
+#else
+static const bool k_use_calibration_card = false;
+#endif
 #if CONFIG_CRT_RENDER_MODE_RGB332_COMPOSE
 static const bool k_use_rgb332_compose = CONFIG_CRT_RENDER_MODE_RGB332_COMPOSE;
 #else
@@ -61,7 +67,7 @@ static crt_stimulus_t s_stimulus;
 
 static bool app_uses_compose_demo(void)
 {
-    return !k_use_rgb332_framebuffer && !k_use_stimulus;
+    return !k_use_rgb332_framebuffer && !k_use_calibration_card && !k_use_stimulus;
 }
 
 /* Demo scene:
@@ -1022,8 +1028,10 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
     crt_timing_standard_info_t standard_info = {0};
     crt_core_config_t config = {
         .video_standard = video_standard,
-        .enable_color = k_enable_color || k_use_rgb332_framebuffer || k_use_rgb332_compose,
-        .demo_pattern_mode = (k_enable_color || k_use_rgb332_framebuffer || k_use_rgb332_compose)
+        .enable_color = k_enable_color || k_use_rgb332_framebuffer || k_use_calibration_card ||
+                        k_use_rgb332_compose,
+        .demo_pattern_mode = (k_enable_color || k_use_rgb332_framebuffer ||
+                              k_use_calibration_card || k_use_rgb332_compose)
                                  ? CRT_DEMO_PATTERN_COLOR_BARS_RAMP
                                  : CRT_DEMO_PATTERN_LUMA_BARS,
         .target_ready_depth = 64,
@@ -1055,6 +1063,9 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
     if (err == ESP_OK) {
         if (k_use_rgb332_framebuffer) {
             app_fill_rgb332_test_card(&s_fb);
+        } else if (k_use_calibration_card) {
+            crt_demo_pattern_fill_rgb332_calibration_card(s_fb.buffer, s_fb.width, s_fb.height,
+                                                          s_fb.width);
         } else if (k_use_stimulus) {
             crt_fb_palette_init_grayscale(&s_fb, APP_BLANK_LEVEL, APP_WHITE_LEVEL);
         } else {
@@ -1074,9 +1085,10 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
         return err;
     }
 
-    if (k_use_rgb332_framebuffer) {
+    if (k_use_rgb332_framebuffer || k_use_calibration_card) {
         crt_register_scanline_hook(crt_fb_rgb332_scanline_hook, &s_fb);
-        ESP_LOGI(TAG, "render: direct RGB332 framebuffer %ux%u", s_fb.width, s_fb.height);
+        ESP_LOGI(TAG, "render: %s RGB332 framebuffer %ux%u",
+                 k_use_calibration_card ? "calibration" : "direct", s_fb.width, s_fb.height);
     } else if (k_use_stimulus) {
         crt_stimulus_config_t stimulus_config;
         crt_stimulus_default_config(&stimulus_config);
@@ -1190,6 +1202,7 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
              " subcarrier=%" PRIu32 " chroma=%s",
              standard_info.name, config.enable_color ? "on" : "off",
              k_use_rgb332_framebuffer                                         ? "rgb332_fb"
+             : k_use_calibration_card                                         ? "calibration"
              : k_use_rgb332_compose                                           ? "rgb332_compose"
              : k_use_stimulus                                                 ? "stimulus"
              : (config.demo_pattern_mode == CRT_DEMO_PATTERN_COLOR_BARS_RAMP) ? "color_bars_ramp"

@@ -37,6 +37,9 @@ void crt_demo_pattern_build_color_bars_row(uint8_t *pixels, size_t width);
 
 void crt_demo_pattern_build_grayscale_ramp_row(uint8_t *pixels, size_t width);
 
+void crt_demo_pattern_fill_rgb332_calibration_card(uint8_t *pixels, size_t width, size_t height,
+                                                   size_t stride);
+
 bool crt_demo_pattern_is_ramp_region(const crt_demo_pattern_runtime_t *runtime,
                                      uint16_t active_line_index);
 
