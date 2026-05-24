@@ -179,6 +179,7 @@ IRAM_ATTR static void demo_frame_hook(uint32_t frame, void *user_data)
     (void)user_data;
     (void)frame;
 
+    (void)crt_ppu_commit_frame(&s_ppu);
     crt_ppu_set_scroll(&s_ppu, (int)(frame % (TILE_VISIBLE_W * 8U)), 0);
 
 #if CONFIG_CRT_COMPOSE_STRESS_DEMO
@@ -188,7 +189,7 @@ IRAM_ATTR static void demo_frame_hook(uint32_t frame, void *user_data)
         }
         const int16_t x = (int16_t)((frame + (uint32_t)(i * 29U)) % (256U - 16U));
         const int16_t y = 96;
-        crt_ppu_set_sprite_position(&s_ppu, s_sprite_ids[i], x, y);
+        (void)crt_ppu_stage_sprite_position(&s_ppu, s_sprite_ids[i], x, y);
     }
 #else
     /* Sprite world is logical 256x240. Bounce inside
@@ -211,7 +212,8 @@ IRAM_ATTR static void demo_frame_hook(uint32_t frame, void *user_data)
         if (ny <= 0 || ny >= (int16_t)(240 - 16)) {
             s_dy[i] = (int16_t)-s_dy[i];
         }
-        crt_ppu_move_sprite_by(&s_ppu, s_sprite_ids[i], s_dx[i], s_dy[i]);
+        (void)crt_ppu_stage_sprite_position(&s_ppu, s_sprite_ids[i], (int16_t)(spr.x + s_dx[i]),
+                                            (int16_t)(spr.y + s_dy[i]));
     }
 #endif
 }
@@ -1188,11 +1190,12 @@ static void app_log_diag_snapshot(void)
     if (app_uses_compose_demo()) {
         const uint32_t sprite_overflow = crt_ppu_get_sprite_overflow_count(&s_ppu);
         const uint8_t sprite_peak = crt_ppu_get_sprite_max_line_rendered(&s_ppu);
+        const uint8_t ppu_pending = crt_ppu_get_pending_update_count(&s_ppu);
         const crt_compose_stats_t compose_stats = crt_ppu_get_compose_stats(&s_ppu);
         ESP_LOGI(TAG,
                  "compose_budget: mode=%s attrs=tile banks=tile scroll=h sprites=%u max/line=%u "
                  "sprite_attrs=flip+bank priority=%s active=%ux%u bank1=+%u sprite_peak=%u/%u "
-                 "sprite_overflow=%" PRIu32 " compose_fused=%" PRIu32
+                 "sprite_overflow=%" PRIu32 " ppu_pending=%u/%u compose_fused=%" PRIu32
                  " compose_materialized=%" PRIu32 " compose_max_layers=%u underruns=%" PRIu32
                  " queue_min=%" PRIu32 " prep_max=%" PRIu32 " cycles",
                  k_use_rgb332_compose ? "rgb332" : "palette", (unsigned)APP_DEMO_SPRITE_COUNT,
@@ -1201,6 +1204,7 @@ static void app_log_diag_snapshot(void)
                  (unsigned)(TILE_VISIBLE_W * CRT_TILE_PX_W),
                  (unsigned)(TILE_VISIBLE_H * CRT_TILE_PX_H), (unsigned)TILE_BANK1_LUMA_BOOST,
                  (unsigned)sprite_peak, (unsigned)CRT_SPRITE_DEFAULT_PERLINE, sprite_overflow,
+                 (unsigned)ppu_pending, (unsigned)CRT_PPU_MAX_PENDING_UPDATES,
                  compose_stats.fused_lines, compose_stats.materialized_lines,
                  (unsigned)compose_stats.max_layers_fetched, diag.dma_underrun_count,
                  diag.ready_queue_min_depth, diag.prep_cycles_max);
