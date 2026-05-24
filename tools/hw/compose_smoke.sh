@@ -14,6 +14,7 @@ COMPOSE_STRESS="${COMPOSE_STRESS:-0}"
 VIDEO_STANDARD="${VIDEO_STANDARD:-NTSC}"
 EXPECT_ACTIVE_SPRITES="${EXPECT_ACTIVE_SPRITES:-}"
 EXPECT_SPRITE_PEAK="${EXPECT_SPRITE_PEAK:-}"
+EXPECT_PPU_PENDING="${EXPECT_PPU_PENDING:-}"
 IDF_EXPORT="${IDF_EXPORT:-$HOME/esp/esp-idf/export.sh}"
 
 fail() {
@@ -83,7 +84,7 @@ validate_monitor() {
     ((${#budget_lines[@]} >= MIN_WINDOWS)) ||
         fail "expected at least ${MIN_WINDOWS} compose_budget windows, got ${#budget_lines[@]}"
 
-    local line underruns sprite_overflow materialized fused max_layers sprites sprite_peak sprite_cap
+    local line underruns sprite_overflow materialized fused max_layers sprites sprite_peak sprite_cap ppu_pending
     local i=0
     for line in "${budget_lines[@]}"; do
         i=$((i + 1))
@@ -95,6 +96,7 @@ validate_monitor() {
         sprites="$(extract_u32 sprites "$line")"
         sprite_peak="$(sed -n 's/.*sprite_peak=\([0-9][0-9]*\)\/[0-9][0-9]*.*/\1/p' <<<"$line")"
         sprite_cap="$(sed -n 's/.*sprite_peak=[0-9][0-9]*\/\([0-9][0-9]*\).*/\1/p' <<<"$line")"
+        ppu_pending="$(sed -n 's/.*ppu_pending=\([0-9][0-9]*\)\/[0-9][0-9]*.*/\1/p' <<<"$line")"
 
         [[ -n "$underruns" && -n "$sprite_overflow" && -n "$materialized" && -n "$fused" && -n "$max_layers" ]] ||
             fail "window ${i}: could not parse compose_budget counters"
@@ -118,10 +120,15 @@ validate_monitor() {
             ((sprite_cap == EXPECT_SPRITE_PEAK)) ||
                 fail "window ${i}: sprite_peak cap=${sprite_cap}, expected ${EXPECT_SPRITE_PEAK}"
         fi
+        if [[ -n "$EXPECT_PPU_PENDING" ]]; then
+            [[ -n "$ppu_pending" ]] || fail "window ${i}: could not parse ppu_pending"
+            ((ppu_pending == EXPECT_PPU_PENDING)) ||
+                fail "window ${i}: ppu_pending=${ppu_pending}, expected ${EXPECT_PPU_PENDING}"
+        fi
 
-        printf '%s: window %u fused=%u materialized=%u max_layers=%u underruns=%u sprite_overflow=%u sprite_peak=%s/%s\n' \
+        printf '%s: window %u fused=%u materialized=%u max_layers=%u underruns=%u sprite_overflow=%u sprite_peak=%s/%s ppu_pending=%s\n' \
             "$RUN_NAME" "$i" "$fused" "$materialized" "$max_layers" "$underruns" "$sprite_overflow" \
-            "${sprite_peak:-?}" "${sprite_cap:-?}"
+            "${sprite_peak:-?}" "${sprite_cap:-?}" "${ppu_pending:-?}"
     done
 }
 
