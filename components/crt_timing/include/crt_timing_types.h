@@ -46,6 +46,9 @@ typedef struct {
     uint16_t field_rate_millihz;
     bool chroma_phase_alternates;
     bool system_m_timing;
+    bool counter_validated;
+    bool visual_validated;
+    bool experimental;
 } crt_timing_standard_info_t;
 
 #ifdef __cplusplus

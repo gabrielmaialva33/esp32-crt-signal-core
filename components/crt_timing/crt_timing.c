@@ -11,6 +11,9 @@ static const crt_timing_standard_info_t k_standard_info[] = {
         .field_rate_millihz = 59940,
         .chroma_phase_alternates = false,
         .system_m_timing = true,
+        .counter_validated = true,
+        .visual_validated = true,
+        .experimental = false,
     },
     {
         .standard = CRT_VIDEO_STANDARD_PAL,
@@ -20,6 +23,9 @@ static const crt_timing_standard_info_t k_standard_info[] = {
         .field_rate_millihz = 50000,
         .chroma_phase_alternates = true,
         .system_m_timing = false,
+        .counter_validated = true,
+        .visual_validated = false,
+        .experimental = true,
     },
     {
         .standard = CRT_VIDEO_STANDARD_PAL_M,
@@ -29,6 +35,9 @@ static const crt_timing_standard_info_t k_standard_info[] = {
         .field_rate_millihz = 59940,
         .chroma_phase_alternates = true,
         .system_m_timing = true,
+        .counter_validated = true,
+        .visual_validated = true,
+        .experimental = false,
     },
     {
         .standard = CRT_VIDEO_STANDARD_PAL_N,
@@ -38,6 +47,9 @@ static const crt_timing_standard_info_t k_standard_info[] = {
         .field_rate_millihz = 50000,
         .chroma_phase_alternates = true,
         .system_m_timing = false,
+        .counter_validated = true,
+        .visual_validated = false,
+        .experimental = true,
     },
 };
 

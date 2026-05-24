@@ -334,6 +334,10 @@ Configure these with `idf.py menuconfig`:
 | `CRT_TEST_STANDARD_TOGGLE`            | Alternates NTSC/PAL at runtime for testing    |
 | `CRT_TEST_STANDARD_TOGGLE_INTERVAL_S` | Seconds between standard switches             |
 
+NTSC-M and PAL-M are the visually validated bring-up standards. PAL-B/G and
+PAL-N remain experimental until they pass real display validation, even when
+software counters show zero underruns.
+
 `CRT_RENDER_MODE_RGB332_FB` enables a 256x240 RGB332 framebuffer path that
 reuses ESP_8_BIT's RGB332→composite lookup tables and APLL coefficients. PAL
 timing and sync stay owned by this project — ESP_8_BIT is only a reference for

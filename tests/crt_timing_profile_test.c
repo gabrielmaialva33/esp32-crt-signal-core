@@ -100,6 +100,9 @@ static void test_standard_info_names_chroma_and_system_family(void)
     assert(info.field_rate_millihz == 59940);
     assert(!info.chroma_phase_alternates);
     assert(info.system_m_timing);
+    assert(info.counter_validated);
+    assert(info.visual_validated);
+    assert(!info.experimental);
 
     assert(crt_timing_get_standard_info(CRT_VIDEO_STANDARD_PAL_M, &info) == ESP_OK);
     assert(strcmp(info.name, "PAL-M") == 0);
@@ -108,6 +111,9 @@ static void test_standard_info_names_chroma_and_system_family(void)
     assert(info.field_rate_millihz == 59940);
     assert(info.chroma_phase_alternates);
     assert(info.system_m_timing);
+    assert(info.counter_validated);
+    assert(info.visual_validated);
+    assert(!info.experimental);
 
     assert(crt_timing_get_standard_info(CRT_VIDEO_STANDARD_PAL_N, &info) == ESP_OK);
     assert(strcmp(info.name, "PAL-N") == 0);
@@ -116,6 +122,9 @@ static void test_standard_info_names_chroma_and_system_family(void)
     assert(info.field_rate_millihz == 50000);
     assert(info.chroma_phase_alternates);
     assert(!info.system_m_timing);
+    assert(info.counter_validated);
+    assert(!info.visual_validated);
+    assert(info.experimental);
 
     assert(crt_timing_get_standard_info(CRT_VIDEO_STANDARD_PAL, &info) == ESP_OK);
     assert(strcmp(info.name, "PAL-B/G") == 0);
@@ -124,6 +133,9 @@ static void test_standard_info_names_chroma_and_system_family(void)
     assert(info.field_rate_millihz == 50000);
     assert(info.chroma_phase_alternates);
     assert(!info.system_m_timing);
+    assert(info.counter_validated);
+    assert(!info.visual_validated);
+    assert(info.experimental);
     assert(strcmp(crt_timing_get_standard_name(CRT_VIDEO_STANDARD_PAL_M), "PAL-M") == 0);
 }
 

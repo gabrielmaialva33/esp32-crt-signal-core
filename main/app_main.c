@@ -1199,7 +1199,7 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
 
     ESP_LOGI(TAG,
              "ESP32 CRT signal core started: standard=%s color=%s pattern=%s sample=%" PRIu32
-             " subcarrier=%" PRIu32 " chroma=%s",
+             " subcarrier=%" PRIu32 " chroma=%s status=%s",
              standard_info.name, config.enable_color ? "on" : "off",
              k_use_rgb332_framebuffer                                         ? "rgb332_fb"
              : k_use_calibration_card                                         ? "calibration"
@@ -1208,7 +1208,8 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
              : (config.demo_pattern_mode == CRT_DEMO_PATTERN_COLOR_BARS_RAMP) ? "color_bars_ramp"
                                                                               : "luma_bars",
              timing.sample_rate_hz, standard_info.color_subcarrier_hz,
-             standard_info.chroma_phase_alternates ? "alternate" : "fixed");
+             standard_info.chroma_phase_alternates ? "alternate" : "fixed",
+             standard_info.experimental ? "experimental" : "validated");
 
     return ESP_OK;
 }

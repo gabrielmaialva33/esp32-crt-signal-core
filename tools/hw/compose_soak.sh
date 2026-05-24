@@ -3,6 +3,7 @@ set -euo pipefail
 
 PORT="${PORT:-/dev/ttyACM0}"
 SOAK_SECONDS="${SOAK_SECONDS:-90}"
+INCLUDE_EXPERIMENTAL="${INCLUDE_EXPERIMENTAL:-0}"
 IDF_EXPORT="${IDF_EXPORT:-$HOME/esp/esp-idf/export.sh}"
 
 min_windows_for_duration() {
@@ -36,7 +37,9 @@ run_soak() {
 }
 
 run_soak NTSC
-run_soak PAL
 run_soak PAL_M
-run_soak PAL_N
+if [[ "$INCLUDE_EXPERIMENTAL" == "1" ]]; then
+    run_soak PAL
+    run_soak PAL_N
+fi
 printf 'compose_soak: OK port=%s seconds_per_standard=%u\n' "$PORT" "$SOAK_SECONDS"
