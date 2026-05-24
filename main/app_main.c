@@ -100,6 +100,28 @@ static void demo_sprite_atlas_fill(void)
 #define TILE_VISIBLE_W 32u
 #define TILE_VISIBLE_H 30u
 static uint8_t s_tile_nametable[TILE_PITCH_W * TILE_PITCH_H];
+static uint8_t s_tile_attrs[TILE_PITCH_W * TILE_PITCH_H];
+static uint8_t s_tile_palette_bank_1[256];
+static crt_compose_palette_banks_t s_tile_palette_banks;
+
+static void demo_tile_attrs_fill(void)
+{
+    memset(s_tile_attrs, 0, sizeof(s_tile_attrs));
+    for (uint16_t i = 0; i < 256U; ++i) {
+        s_tile_palette_bank_1[i] = (uint8_t)i;
+    }
+    memset(&s_tile_palette_banks, 0, sizeof(s_tile_palette_banks));
+    s_tile_palette_banks.banks[1] = s_tile_palette_bank_1;
+
+    for (uint16_t row = 0; row < TILE_VISIBLE_H; ++row) {
+        for (uint16_t col = 0; col < TILE_VISIBLE_W; ++col) {
+            if (((row ^ col) & 7U) == 0U) {
+                s_tile_attrs[(size_t)row * TILE_PITCH_W + col] =
+                    (uint8_t)(1U << CRT_TILE_ATTR_PALETTE_SHIFT);
+            }
+        }
+    }
+}
 
 #define APP_FB_WIDTH    256
 #define APP_FB_HEIGHT   240
@@ -1013,6 +1035,7 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
         /* Tile layer: 32x32 pitch (PoT), 32x30 visible. Pattern from
          * rodata (tile_demo.h); nametable filled in DRAM. */
         tile_demo_fill_nametable(s_tile_nametable, TILE_PITCH_W);
+        demo_tile_attrs_fill();
         demo_sprite_atlas_fill();
         crt_sprite_atlas_init(&s_sprite_atlas, s_sprite_atlas_data, 64U, 16U, 64U);
 
@@ -1024,13 +1047,13 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
             .pattern_table = tile_demo_patterns,
             .pattern_count = TILE_DEMO_COUNT,
             .nametable = s_tile_nametable,
-            .attributes = NULL,
+            .attributes = s_tile_attrs,
             .sprite_atlas = &s_sprite_atlas,
             .sprite_transparent_idx = 0,
             .max_sprites_per_line = CRT_SPRITE_DEFAULT_PERLINE,
             .palette = s_fb.palette,
             .palette_size = s_fb.palette_size,
-            .palette_banks = NULL,
+            .palette_banks = &s_tile_palette_banks,
         };
         esp_err_t ppu_err = crt_ppu_init(&s_ppu, &ppu_config);
         if (ppu_err != ESP_OK) {
