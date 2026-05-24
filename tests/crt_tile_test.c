@@ -588,6 +588,41 @@ static void test_scanline_hook_palette_bank_scroll_flip_parity(void) {
     printf("  scanline hook palette bank scroll/flip parity: OK\n");
 }
 
+static void test_scanline_hook_palette_banks_plain_attrs_parity(void) {
+    crt_tile_layer_t banked;
+    crt_tile_layer_t plain;
+    uint8_t pattern[CRT_TILE_BYTES * 8];
+    uint8_t nt[32 * 32];
+    uint8_t attrs[32 * 32];
+    memset(nt, 0, sizeof(nt));
+    memset(attrs, 0, sizeof(attrs));
+    fill_position_pattern(pattern, 8);
+    for (uint16_t i = 0; i < (uint16_t)(32 * 32); ++i) {
+        nt[i] = (uint8_t)(i & 7u);
+    }
+    init_linear_palette();
+    init_palette_bank_one(69, 0xE1);
+
+    assert(crt_tile_init(&banked, 32, 30, 32, 32, pattern, 8, nt) == 0);
+    assert(crt_tile_init(&plain, 32, 30, 32, 32, pattern, 8, nt) == 0);
+    crt_tile_set_palette(&banked, g_palette);
+    crt_tile_set_palette(&plain, g_palette);
+    crt_tile_set_attributes(&banked, attrs);
+    crt_tile_set_palette_banks(&banked, &g_palette_banks);
+    crt_tile_set_scroll(&banked, 5, 7);
+    crt_tile_set_scroll(&plain, 5, 7);
+
+    crt_scanline_t sc = make_active_line(9);
+    uint16_t expected[768];
+    uint16_t actual[768];
+    memset(expected, 0, sizeof(expected));
+    memset(actual, 0, sizeof(actual));
+    crt_tile_scanline_hook(&sc, expected, 768, &plain);
+    crt_tile_scanline_hook(&sc, actual, 768, &banked);
+    assert(memcmp(actual, expected, sizeof(actual)) == 0);
+    printf("  scanline hook palette banks plain attrs parity: OK\n");
+}
+
 static void test_missing_palette_noop(void) {
     crt_tile_layer_t t;
     uint8_t pattern[64] = {0};
@@ -644,6 +679,7 @@ int main(void) {
     test_scanline_hook_parity_with_fetch();
     test_scanline_hook_applies_palette_bank_attrs();
     test_scanline_hook_palette_bank_scroll_flip_parity();
+    test_scanline_hook_palette_banks_plain_attrs_parity();
     test_missing_palette_noop();
     test_invalid_hook_inputs_noop();
     printf("ALL PASSED\n");

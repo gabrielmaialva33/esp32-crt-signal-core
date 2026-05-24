@@ -375,6 +375,25 @@ tile_write_expanded_palette_pair(uint16_t *active_buf, uint16_t logical_x, uint1
     active_buf[base + 5u] = l1;
 }
 
+IRAM_ATTR static inline void
+tile_write_expanded_palette_plain_span(uint16_t *active_buf, uint16_t x, const uint8_t *tile_line,
+                                       uint16_t fine, uint16_t take, const uint16_t *pal)
+{
+    uint16_t i = 0;
+    if ((x & 1u) != 0u && i < take) {
+        tile_patch_expanded_palette_sample(active_buf, x, pal[tile_line[fine]]);
+        i++;
+    }
+    for (; (uint16_t)(i + 1u) < take; i = (uint16_t)(i + 2u)) {
+        const uint8_t sample0 = tile_line[fine + i];
+        const uint8_t sample1 = tile_line[fine + i + 1u];
+        tile_write_expanded_palette_pair(active_buf, (uint16_t)(x + i), pal[sample0], pal[sample1]);
+    }
+    if (i < take) {
+        tile_patch_expanded_palette_sample(active_buf, (uint16_t)(x + i), pal[tile_line[fine + i]]);
+    }
+}
+
 IRAM_ATTR static void tile_write_expanded_palette_span(uint16_t *active_buf, uint16_t x,
                                                        const uint8_t *tile_line, uint16_t fine,
                                                        uint16_t take, const uint8_t *bank,
@@ -448,6 +467,7 @@ IRAM_ATTR static void tile_render_banked_256_to_768(const crt_tile_layer_t *t, u
     uint16_t fine = (uint16_t)(t->scroll_x_px & 7u);
     uint16_t remaining = CRT_TILE_STACK_LOGICAL_W;
     uint16_t x = 0;
+    const bool bank0_identity = t->palette_banks->banks[0] == NULL;
 
     while (remaining > 0u) {
         const uint16_t wrapped_col = (t->pitch_w_mask != 0u) ? (uint16_t)(col & t->pitch_w_mask)
@@ -459,20 +479,27 @@ IRAM_ATTR static void tile_render_banked_256_to_768(const crt_tile_layer_t *t, u
         if (idx >= pattern_count) {
             idx = 0;
         }
-        const uint16_t sample_y =
-            (attr & CRT_TILE_ATTR_VFLIP) != 0u ? (uint16_t)(7u - fine_y) : fine_y;
-        const uint8_t *tile_line =
-            &pattern[(size_t)idx * CRT_TILE_BYTES + (size_t)sample_y * CRT_TILE_PX_W];
-        const uint8_t bank_idx =
-            (uint8_t)((attr & CRT_COMPOSE_PIXEL_BANK_MASK) >> CRT_COMPOSE_PIXEL_BANK_SHIFT);
-        const uint8_t *bank = t->palette_banks->banks[bank_idx];
-        const bool hflip = (attr & CRT_TILE_ATTR_HFLIP) != 0u;
         uint16_t take = (uint16_t)(CRT_TILE_PX_W - fine);
         if (take > remaining) {
             take = remaining;
         }
-        tile_write_expanded_palette_span(active_buf, x, tile_line, fine, take, bank, hflip,
-                                         t->palette);
+        if (attr == 0u && bank0_identity) {
+            const uint8_t *tile_line =
+                &pattern[(size_t)idx * CRT_TILE_BYTES + (size_t)fine_y * CRT_TILE_PX_W];
+            tile_write_expanded_palette_plain_span(active_buf, x, tile_line, fine, take,
+                                                   t->palette);
+        } else {
+            const uint16_t sample_y =
+                (attr & CRT_TILE_ATTR_VFLIP) != 0u ? (uint16_t)(7u - fine_y) : fine_y;
+            const uint8_t *tile_line =
+                &pattern[(size_t)idx * CRT_TILE_BYTES + (size_t)sample_y * CRT_TILE_PX_W];
+            const uint8_t bank_idx =
+                (uint8_t)((attr & CRT_COMPOSE_PIXEL_BANK_MASK) >> CRT_COMPOSE_PIXEL_BANK_SHIFT);
+            const uint8_t *bank = t->palette_banks->banks[bank_idx];
+            const bool hflip = (attr & CRT_TILE_ATTR_HFLIP) != 0u;
+            tile_write_expanded_palette_span(active_buf, x, tile_line, fine, take, bank, hflip,
+                                             t->palette);
+        }
         x = (uint16_t)(x + take);
         remaining = (uint16_t)(remaining - take);
         fine = 0;
