@@ -893,6 +893,9 @@ static void app_ir_decay_test(int trial_idx)
         }
         adc_oneshot_read(s_ir_adc, APP_IR_ADC_CHANNEL, &buf[i]);
         esp_rom_delay_us(kPeriodUs);
+        if ((i & 0x0F) == 0x0F) {
+            vTaskDelay(1);
+        }
     }
 
     /* Restore ring as the OUTPUT driver */

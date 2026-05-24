@@ -80,6 +80,10 @@ capture_monitor() {
 }
 
 validate_monitor() {
+    if grep -aEq 'task_wdt|Task watchdog|Guru Meditation|panic' "$MONITOR_LOG"; then
+        fail "monitor reported watchdog or panic"
+    fi
+
     mapfile -t budget_lines < <(grep -a 'compose_budget:' "$MONITOR_LOG" || true)
     ((${#budget_lines[@]} >= MIN_WINDOWS)) ||
         fail "expected at least ${MIN_WINDOWS} compose_budget windows, got ${#budget_lines[@]}"

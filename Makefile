@@ -28,6 +28,7 @@ hw-compose-stress:  ## Build, flash, and validate worst-case COMPOSE diagnostics
 	@RUN_NAME="compose_stress" COMPOSE_STRESS=1 BUILD_DIR="build/compose-stress" \
 		SDKCONFIG_TMP="/tmp/esp32-crt-compose-stress-sdkconfig" \
 		MONITOR_LOG="/tmp/esp32-crt-compose-stress-monitor.log" \
+		MONITOR_SECONDS=55 MIN_WINDOWS=8 \
 		EXPECT_ACTIVE_SPRITES=8 EXPECT_SPRITE_PEAK=8 EXPECT_PPU_PENDING=8 \
 		PORT="$(HW_PORT)" tools/hw/compose_smoke.sh
 
@@ -36,6 +37,7 @@ hw-compose-pal-stress:  ## Build, flash, and validate PAL worst-case COMPOSE dia
 		BUILD_DIR="build/compose-pal-stress" \
 		SDKCONFIG_TMP="/tmp/esp32-crt-compose-pal-stress-sdkconfig" \
 		MONITOR_LOG="/tmp/esp32-crt-compose-pal-stress-monitor.log" \
+		MONITOR_SECONDS=55 MIN_WINDOWS=8 \
 		EXPECT_ACTIVE_SPRITES=8 EXPECT_SPRITE_PEAK=8 EXPECT_PPU_PENDING=8 \
 		PORT="$(HW_PORT)" tools/hw/compose_smoke.sh
 
