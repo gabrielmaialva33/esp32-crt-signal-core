@@ -194,6 +194,17 @@ esp_err_t crt_compose_swap_layers(crt_compose_t *c, uint8_t first_layer_idx,
 void crt_compose_scanline_hook(const crt_scanline_t *scanline, uint16_t *active_buf,
                                uint16_t active_width, void *user_data);
 
+/**
+ * @brief RGB332 composite-color scanline hook for a 256-pixel logical scene.
+ *
+ * Composes all enabled layers into a 256-byte indexed/RGB332 logical line,
+ * then expands it to 768 DAC samples using the composite RGB332 encoder.
+ * This keeps the existing palette/DAC hook intact while adding the PPU-style
+ * tile + sprite path.
+ */
+void crt_compose_scanline_hook_rgb332_256(const crt_scanline_t *scanline, uint16_t *active_buf,
+                                          uint16_t active_width, void *user_data);
+
 #ifdef __cplusplus
 }
 #endif

@@ -37,6 +37,14 @@ config CRT_RENDER_MODE_RGB332_FB
         Uses the ESP_8_BIT-derived RGB332 composite color tables to render
         a 256x240 framebuffer directly, bypassing the tile compositor.
 
+config CRT_RENDER_MODE_RGB332_COMPOSE
+    bool "Tile compositor with RGB332 composite color"
+    depends on CRT_ENABLE_COLOR
+    help
+        Uses the tile + sprite compositor in a 256x240 logical RGB332 scene,
+        then expands each composed scanline to 768 DAC samples with the
+        ESP_8_BIT-derived composite color tables.
+
 config CRT_RENDER_MODE_STIMULUS
     bool "Measurement stimulus compositor"
     help

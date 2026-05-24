@@ -1,5 +1,7 @@
 #include "crt_compose.h"
 
+#include "crt_composite_palette.h"
+
 #include "esp_attr.h"
 #include "esp_check.h"
 
@@ -178,6 +180,46 @@ esp_err_t crt_compose_swap_layers(crt_compose_t *c, uint8_t first_layer_idx,
 
 /* ── Scanline hook ────────────────────────────────────────────────── */
 
+IRAM_ATTR static void crt_compose_render_indexed_line(crt_compose_t *c, uint16_t logical_line,
+                                                      uint16_t width)
+{
+    bool line_ready = false;
+
+    for (uint8_t li = 0; li < c->layer_count; ++li) {
+        const crt_compose_layer_t *layer = &c->layers[li];
+        if (!layer->enabled || layer->fetch == NULL) {
+            continue;
+        }
+
+        if (layer->transparent_idx == CRT_COMPOSE_NO_TRANSPARENCY) {
+            (void)layer->fetch(layer->ctx, logical_line, c->line, width);
+            line_ready = true;
+            continue;
+        }
+
+        if (!line_ready) {
+            memset(c->line, c->clear_idx, width);
+            line_ready = true;
+        }
+
+        if (!layer->fetch(layer->ctx, logical_line, c->scratch, width)) {
+            continue;
+        }
+
+        const uint8_t key = (uint8_t)layer->transparent_idx;
+        for (uint16_t x = 0; x < width; ++x) {
+            uint8_t s = c->scratch[x];
+            if (s != key) {
+                c->line[x] = s;
+            }
+        }
+    }
+
+    if (!line_ready) {
+        memset(c->line, c->clear_idx, width);
+    }
+}
+
 IRAM_ATTR void crt_compose_scanline_hook(const crt_scanline_t *scanline, uint16_t *active_buf,
                                          uint16_t active_width, void *user_data)
 {
@@ -351,4 +393,21 @@ IRAM_ATTR void crt_compose_scanline_hook(const crt_scanline_t *scanline, uint16_
     if (i < active_width) {
         active_buf[i] = pal[line[i]];
     }
+}
+
+IRAM_ATTR void crt_compose_scanline_hook_rgb332_256(const crt_scanline_t *scanline,
+                                                    uint16_t *active_buf, uint16_t active_width,
+                                                    void *user_data)
+{
+    crt_compose_t *c = (crt_compose_t *)user_data;
+
+    if (scanline == NULL || c == NULL || active_buf == NULL ||
+        active_width != CRT_COMPOSITE_RGB332_ACTIVE_WIDTH || scanline->timing == NULL ||
+        !CRT_SCANLINE_HAS_LOGICAL(scanline)) {
+        return;
+    }
+
+    crt_compose_render_indexed_line(c, scanline->logical_line, CRT_COMPOSITE_RGB332_WIDTH);
+    crt_composite_rgb332_render_256_to_768(scanline->timing->standard, scanline->physical_line,
+                                           c->line, active_buf);
 }

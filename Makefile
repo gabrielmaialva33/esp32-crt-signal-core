@@ -116,6 +116,7 @@ test-compose:
 	@$(TEST_CC) $(TEST_CFLAGS) $(TEST_INC) \
 		tests/crt_compose_test.c components/crt_compose/crt_compose.c \
 		components/crt_compose/crt_compose_layers.c components/crt_compose/crt_sprite.c \
+		components/crt_tile/crt_tile.c components/crt_core/crt_composite_palette.c \
 		-o $(TEST_OUT)/crt_compose_test && $(TEST_OUT)/crt_compose_test
 
 test-stimulus:

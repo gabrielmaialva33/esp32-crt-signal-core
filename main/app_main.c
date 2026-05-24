@@ -40,6 +40,11 @@ static const bool k_use_rgb332_framebuffer = CONFIG_CRT_RENDER_MODE_RGB332_FB;
 #else
 static const bool k_use_rgb332_framebuffer = false;
 #endif
+#if CONFIG_CRT_RENDER_MODE_RGB332_COMPOSE
+static const bool k_use_rgb332_compose = CONFIG_CRT_RENDER_MODE_RGB332_COMPOSE;
+#else
+static const bool k_use_rgb332_compose = false;
+#endif
 #if CONFIG_CRT_RENDER_MODE_STIMULUS
 static const bool k_use_stimulus = CONFIG_CRT_RENDER_MODE_STIMULUS;
 #else
@@ -933,8 +938,8 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
 {
     crt_core_config_t config = {
         .video_standard = video_standard,
-        .enable_color = k_enable_color || k_use_rgb332_framebuffer,
-        .demo_pattern_mode = (k_enable_color || k_use_rgb332_framebuffer)
+        .enable_color = k_enable_color || k_use_rgb332_framebuffer || k_use_rgb332_compose,
+        .demo_pattern_mode = (k_enable_color || k_use_rgb332_framebuffer || k_use_rgb332_compose)
                                  ? CRT_DEMO_PATTERN_COLOR_BARS_RAMP
                                  : CRT_DEMO_PATTERN_LUMA_BARS,
         .target_ready_depth = 64,
@@ -1016,7 +1021,7 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
         }
         crt_tile_set_palette(&s_tile, s_fb.palette);
 
-        /* Compositor scene: 4 layers exercising every primitive at once. */
+        /* Compositor scene: fused tile base + keyed sprite overlay. */
         crt_compose_init(&s_compose);
         crt_compose_set_palette(&s_compose, s_fb.palette, s_fb.palette_size);
 
@@ -1024,14 +1029,15 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
         crt_compose_add_layer_fused(&s_compose, crt_tile_layer_fetch, crt_tile_scanline_hook,
                                     &s_tile);
 
-        /* Layer 1: sprite layer (single keyed layer holding the OAM).
-         * x_scale=3 maps the 256-px logical sprite world into the 768
-         * DAC samples per active line without instantiating extra layers. */
+        /* Layer 1: sprite layer (single keyed layer holding the OAM). The
+         * grayscale DAC path writes directly into the 768-sample active line,
+         * so sprites expand 3x there. The RGB332 compose path stays in the
+         * 256-pixel logical domain and lets the final encoder expand to 768. */
         demo_sprite_atlas_fill();
         crt_sprite_atlas_init(&s_sprite_atlas, s_sprite_atlas_data, 64U, 16U, 64U);
         crt_sprite_layer_init(&s_sprite_layer, &s_sprite_atlas, /* key */ 0);
         crt_sprite_layer_set_max_sprites_per_line(&s_sprite_layer, CRT_SPRITE_DEFAULT_PERLINE);
-        crt_sprite_layer_set_x_scale(&s_sprite_layer, 3U);
+        crt_sprite_layer_set_x_scale(&s_sprite_layer, k_use_rgb332_compose ? 1U : 3U);
 
         for (size_t i = 0; i < APP_DEMO_SPRITE_COUNT; ++i) {
             const int16_t spawn_x = (int16_t)(40 + i * 56);
@@ -1054,11 +1060,13 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
         (void)s_hud_rect;
         s_checker_layer_idx = CRT_COMPOSE_LAYER_INVALID;
 
-        crt_register_scanline_hook(crt_compose_scanline_hook, &s_compose);
+        crt_register_scanline_hook(k_use_rgb332_compose ? crt_compose_scanline_hook_rgb332_256
+                                                        : crt_compose_scanline_hook,
+                                   &s_compose);
         crt_register_frame_hook(demo_frame_hook, NULL);
-        ESP_LOGI(TAG, "compose: tile %ux%u (h-scroll) + sprite layer (%u sprites, max/line=%u)",
-                 TILE_VISIBLE_W, TILE_VISIBLE_H, (unsigned)APP_DEMO_SPRITE_COUNT,
-                 (unsigned)CRT_SPRITE_DEFAULT_PERLINE);
+        ESP_LOGI(TAG, "compose: %s tile %ux%u (h-scroll) + sprite layer (%u sprites, max/line=%u)",
+                 k_use_rgb332_compose ? "rgb332" : "palette", TILE_VISIBLE_W, TILE_VISIBLE_H,
+                 (unsigned)APP_DEMO_SPRITE_COUNT, (unsigned)CRT_SPRITE_DEFAULT_PERLINE);
     }
 
     err = crt_core_start();
@@ -1071,6 +1079,7 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
              (video_standard == CRT_VIDEO_STANDARD_PAL) ? "PAL" : "NTSC",
              config.enable_color ? "on" : "off",
              k_use_rgb332_framebuffer                                         ? "rgb332_fb"
+             : k_use_rgb332_compose                                           ? "rgb332_compose"
              : k_use_stimulus                                                 ? "stimulus"
              : (config.demo_pattern_mode == CRT_DEMO_PATTERN_COLOR_BARS_RAMP) ? "color_bars_ramp"
                                                                               : "luma_bars");
