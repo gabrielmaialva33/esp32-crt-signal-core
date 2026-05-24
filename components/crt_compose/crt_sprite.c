@@ -1,5 +1,6 @@
 #include "crt_sprite.h"
 
+#include "esp_attr.h"
 #include "esp_check.h"
 
 #include <string.h>
@@ -114,6 +115,7 @@ esp_err_t crt_sprite_add(crt_sprite_layer_t *layer, uint16_t cell_x, uint16_t ce
         .cell_y = cell_y,
         .size = size,
         .enabled = true,
+        .attr = 0,
     };
     layer->sprite_count++;
     if (out_sprite_id != NULL) {
@@ -194,6 +196,22 @@ esp_err_t crt_sprite_set_size(crt_sprite_layer_t *layer, uint8_t sprite_id, crt_
     return ESP_OK;
 }
 
+esp_err_t crt_sprite_set_attr(crt_sprite_layer_t *layer, uint8_t sprite_id, uint8_t attr)
+{
+    ESP_RETURN_ON_FALSE(crt_sprite_id_valid(layer, sprite_id), ESP_ERR_INVALID_ARG, "crt_sprite",
+                        "invalid sprite");
+    layer->sprites[sprite_id].attr = attr;
+    return ESP_OK;
+}
+
+uint8_t crt_sprite_get_attr(const crt_sprite_layer_t *layer, uint8_t sprite_id)
+{
+    if (!crt_sprite_id_valid(layer, sprite_id)) {
+        return 0;
+    }
+    return layer->sprites[sprite_id].attr;
+}
+
 esp_err_t crt_sprite_get(const crt_sprite_layer_t *layer, uint8_t sprite_id,
                          crt_sprite_t *out_sprite)
 {
@@ -204,7 +222,8 @@ esp_err_t crt_sprite_get(const crt_sprite_layer_t *layer, uint8_t sprite_id,
     return ESP_OK;
 }
 
-bool crt_sprite_layer_fetch(void *ctx, uint16_t logical_line, uint8_t *idx_out, uint16_t width)
+IRAM_ATTR bool crt_sprite_layer_fetch(void *ctx, uint16_t logical_line, uint8_t *idx_out,
+                                      uint16_t width)
 {
     crt_sprite_layer_t *layer = (crt_sprite_layer_t *)ctx;
     if (layer == NULL || idx_out == NULL || width == 0 || layer->atlas.pixels == NULL) {
@@ -257,24 +276,48 @@ bool crt_sprite_layer_fetch(void *ctx, uint16_t logical_line, uint8_t *idx_out, 
             continue;
         }
 
-        const uint32_t src_y = ((uint32_t)sprite->cell_y * CRT_SPRITE_CELL_SIZE) + rel_y;
+        const uint8_t attr = sprite->attr;
+        /* BG priority (#37) and palette-bank bits (#35) are preserved for compositor work. */
+        const uint32_t sample_y = ((attr & CRT_SPRITE_ATTR_VFLIP) != 0u)
+                                      ? (uint32_t)(sprite_px - 1u - (uint8_t)rel_y)
+                                      : (uint32_t)rel_y;
+        const uint32_t src_y = ((uint32_t)sprite->cell_y * CRT_SPRITE_CELL_SIZE) + sample_y;
         const uint32_t src_x0 = (uint32_t)sprite->cell_x * CRT_SPRITE_CELL_SIZE;
         const uint8_t *src = &layer->atlas.pixels[(src_y * layer->atlas.stride) + src_x0];
 
         bool wrote_pixel = false;
-        for (uint8_t sx = 0; sx < sprite_px; ++sx) {
-            const uint8_t sample = src[sx];
-            if (sample == layer->transparent_idx) {
-                continue;
-            }
+        if ((attr & CRT_SPRITE_ATTR_HFLIP) != 0u) {
+            for (uint8_t sx = 0; sx < sprite_px; ++sx) {
+                const uint8_t sample = src[sprite_px - 1u - sx];
+                if (sample == layer->transparent_idx) {
+                    continue;
+                }
 
-            const int32_t logical_x = (int32_t)sprite->x + sx;
-            const int32_t out_x0 = logical_x * layer->x_scale;
-            for (uint8_t scale = 0; scale < layer->x_scale; ++scale) {
-                const int32_t out_x = out_x0 + scale;
-                if (out_x >= 0 && out_x < width) {
-                    idx_out[out_x] = sample;
-                    wrote_pixel = true;
+                const int32_t logical_x = (int32_t)sprite->x + sx;
+                const int32_t out_x0 = logical_x * layer->x_scale;
+                for (uint8_t scale = 0; scale < layer->x_scale; ++scale) {
+                    const int32_t out_x = out_x0 + scale;
+                    if (out_x >= 0 && out_x < width) {
+                        idx_out[out_x] = sample;
+                        wrote_pixel = true;
+                    }
+                }
+            }
+        } else {
+            for (uint8_t sx = 0; sx < sprite_px; ++sx) {
+                const uint8_t sample = src[sx];
+                if (sample == layer->transparent_idx) {
+                    continue;
+                }
+
+                const int32_t logical_x = (int32_t)sprite->x + sx;
+                const int32_t out_x0 = logical_x * layer->x_scale;
+                for (uint8_t scale = 0; scale < layer->x_scale; ++scale) {
+                    const int32_t out_x = out_x0 + scale;
+                    if (out_x >= 0 && out_x < width) {
+                        idx_out[out_x] = sample;
+                        wrote_pixel = true;
+                    }
                 }
             }
         }

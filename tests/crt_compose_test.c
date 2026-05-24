@@ -42,6 +42,28 @@ static void init_sprite_atlas(void)
     }
 }
 
+static void init_sprite_attr_marker_atlas(uint8_t top_left, uint8_t top_right,
+                                          uint8_t bottom_left, uint8_t bottom_right)
+{
+    memset(g_sprite_atlas, 0, sizeof(g_sprite_atlas));
+    g_sprite_atlas[0] = top_left;
+    g_sprite_atlas[CRT_SPRITE_CELL_SIZE - 1U] = top_right;
+    g_sprite_atlas[(7U * CRT_SPRITE_CELL_SIZE) + 0U] = bottom_left;
+    g_sprite_atlas[(7U * CRT_SPRITE_CELL_SIZE) + (CRT_SPRITE_CELL_SIZE - 1U)] =
+        bottom_right;
+}
+
+static void init_sprite_attr_layer(crt_sprite_layer_t *sprites, uint8_t *sprite_id)
+{
+    crt_sprite_atlas_t atlas;
+    *sprite_id = CRT_SPRITE_INVALID_ID;
+    assert(crt_sprite_atlas_init(&atlas, g_sprite_atlas, CRT_SPRITE_CELL_SIZE,
+                                 CRT_SPRITE_CELL_SIZE, CRT_SPRITE_CELL_SIZE) == 0);
+    assert(crt_sprite_layer_init(sprites, &atlas, 0) == 0);
+    assert(crt_sprite_add(sprites, 0, 0, CRT_SPRITE_SIZE_8X8, 0, 0, sprite_id) == 0);
+    assert(*sprite_id == 0);
+}
+
 static crt_scanline_t make_active_line(uint16_t logical)
 {
     static crt_timing_profile_t timing;
@@ -706,6 +728,93 @@ static void test_sprite_per_line_cap_and_overflow(void)
     printf("  sprite per-line cap + overflow: OK\n");
 }
 
+static void test_sprite_attr_hflip_one_sprite(void)
+{
+    init_sprite_attr_marker_atlas(0x11, 0x77, 0, 0);
+
+    crt_sprite_layer_t sprites;
+    uint8_t sprite_id;
+    init_sprite_attr_layer(&sprites, &sprite_id);
+    assert(crt_sprite_set_attr(&sprites, sprite_id, CRT_SPRITE_ATTR_HFLIP) == 0);
+
+    uint8_t line[CRT_SPRITE_CELL_SIZE] = {0};
+    assert(crt_sprite_layer_fetch(&sprites, 0, line, CRT_SPRITE_CELL_SIZE));
+    assert(line[0] == 0x77);
+    assert(line[CRT_SPRITE_CELL_SIZE - 1U] == 0x11);
+    printf("  sprite attr hflip: OK\n");
+}
+
+static void test_sprite_attr_vflip_one_sprite(void)
+{
+    init_sprite_attr_marker_atlas(0x11, 0, 0x71, 0);
+
+    crt_sprite_layer_t sprites;
+    uint8_t sprite_id;
+    init_sprite_attr_layer(&sprites, &sprite_id);
+    assert(crt_sprite_set_attr(&sprites, sprite_id, CRT_SPRITE_ATTR_VFLIP) == 0);
+
+    uint8_t line[CRT_SPRITE_CELL_SIZE] = {0};
+    assert(crt_sprite_layer_fetch(&sprites, 0, line, CRT_SPRITE_CELL_SIZE));
+    assert(line[0] == 0x71);
+    assert(line[CRT_SPRITE_CELL_SIZE - 1U] == 0);
+    printf("  sprite attr vflip: OK\n");
+}
+
+static void test_sprite_attr_both_flip(void)
+{
+    init_sprite_attr_marker_atlas(0x11, 0x17, 0x71, 0x77);
+
+    crt_sprite_layer_t sprites;
+    uint8_t sprite_id;
+    init_sprite_attr_layer(&sprites, &sprite_id);
+    assert(crt_sprite_set_attr(&sprites, sprite_id,
+                               CRT_SPRITE_ATTR_HFLIP | CRT_SPRITE_ATTR_VFLIP) == 0);
+
+    uint8_t line[CRT_SPRITE_CELL_SIZE] = {0};
+    assert(crt_sprite_layer_fetch(&sprites, 0, line, CRT_SPRITE_CELL_SIZE));
+    assert(line[0] == 0x77);
+    assert(line[CRT_SPRITE_CELL_SIZE - 1U] == 0x71);
+    printf("  sprite attr both flip: OK\n");
+}
+
+static void test_sprite_attr_bg_priority_bit_preserved(void)
+{
+    init_sprite_attr_marker_atlas(0x11, 0x77, 0, 0);
+
+    uint8_t plain[CRT_SPRITE_CELL_SIZE] = {0};
+    {
+        crt_sprite_layer_t sprites;
+        uint8_t sprite_id;
+        init_sprite_attr_layer(&sprites, &sprite_id);
+        assert(crt_sprite_layer_fetch(&sprites, 0, plain, CRT_SPRITE_CELL_SIZE));
+    }
+
+    crt_sprite_layer_t sprites;
+    uint8_t sprite_id;
+    init_sprite_attr_layer(&sprites, &sprite_id);
+    assert(crt_sprite_set_attr(&sprites, sprite_id, CRT_SPRITE_ATTR_BG_PRIORITY) == 0);
+    assert(crt_sprite_get_attr(&sprites, sprite_id) == CRT_SPRITE_ATTR_BG_PRIORITY);
+
+    uint8_t priority[CRT_SPRITE_CELL_SIZE] = {0};
+    assert(crt_sprite_layer_fetch(&sprites, 0, priority, CRT_SPRITE_CELL_SIZE));
+    assert(memcmp(priority, plain, sizeof(priority)) == 0);
+    printf("  sprite attr bg priority preserved: OK\n");
+}
+
+static void test_sprite_attr_invalid_id_returns_error(void)
+{
+    init_sprite_attr_marker_atlas(0x11, 0x77, 0, 0);
+
+    crt_sprite_layer_t sprites;
+    uint8_t sprite_id;
+    init_sprite_attr_layer(&sprites, &sprite_id);
+
+    assert(crt_sprite_set_attr(&sprites, CRT_SPRITE_MAX_SPRITES, CRT_SPRITE_ATTR_HFLIP) ==
+           ESP_ERR_INVALID_ARG);
+    assert(crt_sprite_get_attr(&sprites, CRT_SPRITE_MAX_SPRITES) == 0);
+    printf("  sprite attr invalid id: OK\n");
+}
+
 static void test_opaque_base_skips_clear(void)
 {
     /* Ensure opaque layer 0 fully controls the line content regardless of
@@ -1045,6 +1154,11 @@ int main(void)
     test_sprite_atlas_and_basic_fetch();
     test_sprite_position_frame_size_and_scale();
     test_sprite_per_line_cap_and_overflow();
+    test_sprite_attr_hflip_one_sprite();
+    test_sprite_attr_vflip_one_sprite();
+    test_sprite_attr_both_flip();
+    test_sprite_attr_bg_priority_bit_preserved();
+    test_sprite_attr_invalid_id_returns_error();
     test_opaque_base_skips_clear();
     test_fused_base_solo_delegates();
     test_fused_base_plus_absent_overlay_delegates();

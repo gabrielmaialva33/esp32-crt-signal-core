@@ -20,6 +20,12 @@ extern "C" {
 #define CRT_SPRITE_INVALID_ID      ((uint8_t)0xFFu)
 #define CRT_SPRITE_DEFAULT_PERLINE 8U
 
+#define CRT_SPRITE_ATTR_HFLIP         (1u << 0) /* mirror columns */
+#define CRT_SPRITE_ATTR_VFLIP         (1u << 1) /* mirror rows */
+#define CRT_SPRITE_ATTR_BG_PRIORITY   (1u << 2) /* reserved for compositor priority */
+#define CRT_SPRITE_ATTR_PALETTE_SHIFT 3
+#define CRT_SPRITE_ATTR_PALETTE_MASK  (0x1Fu << CRT_SPRITE_ATTR_PALETTE_SHIFT)
+
 typedef enum {
     CRT_SPRITE_SIZE_8X8 = 0,
     CRT_SPRITE_SIZE_16X16,
@@ -40,6 +46,7 @@ typedef struct {
     uint16_t cell_y;
     crt_sprite_size_t size;
     bool enabled;
+    uint8_t attr;
 } crt_sprite_t;
 
 typedef struct {
@@ -76,9 +83,27 @@ esp_err_t crt_sprite_set_atlas_cell(crt_sprite_layer_t *layer, uint8_t sprite_id
                                     uint16_t cell_y);
 esp_err_t crt_sprite_set_frame(crt_sprite_layer_t *layer, uint8_t sprite_id, uint16_t frame);
 esp_err_t crt_sprite_set_size(crt_sprite_layer_t *layer, uint8_t sprite_id, crt_sprite_size_t size);
+
+/**
+ * @brief Set one OAM attribute byte for a sprite.
+ *
+ * Returns ESP_ERR_INVALID_ARG for a NULL layer or invalid sprite_id.
+ */
+esp_err_t crt_sprite_set_attr(crt_sprite_layer_t *layer, uint8_t sprite_id, uint8_t attr);
+
+/**
+ * @brief Read one OAM attribute byte. Returns 0 for a NULL layer or invalid sprite_id.
+ */
+uint8_t crt_sprite_get_attr(const crt_sprite_layer_t *layer, uint8_t sprite_id);
+
 esp_err_t crt_sprite_get(const crt_sprite_layer_t *layer, uint8_t sprite_id,
                          crt_sprite_t *out_sprite);
 
+/**
+ * @brief Fetch one indexed sprite scanline, applying per-sprite H/V flip attributes.
+ *
+ * BG priority and palette-bank bits are preserved in OAM for later compositor work.
+ */
 bool crt_sprite_layer_fetch(void *ctx, uint16_t logical_line, uint8_t *idx_out, uint16_t width);
 
 #ifdef __cplusplus
