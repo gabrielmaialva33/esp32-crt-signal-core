@@ -2,6 +2,7 @@
 set -euo pipefail
 
 PORT="${PORT:-/dev/ttyACM0}"
+RUN_NAME="${RUN_NAME:-compose_smoke}"
 BUILD_DIR="${BUILD_DIR:-build/compose-smoke}"
 BASE_SDKCONFIG="${BASE_SDKCONFIG:-sdkconfig}"
 SDKCONFIG_TMP="${SDKCONFIG_TMP:-/tmp/esp32-crt-compose-smoke-sdkconfig}"
@@ -9,11 +10,14 @@ MONITOR_LOG="${MONITOR_LOG:-/tmp/esp32-crt-compose-smoke-monitor.log}"
 MONITOR_SECONDS="${MONITOR_SECONDS:-22}"
 MIN_WINDOWS="${MIN_WINDOWS:-2}"
 MAX_COMPOSE_FUSED="${MAX_COMPOSE_FUSED:-90000}"
+COMPOSE_STRESS="${COMPOSE_STRESS:-0}"
+EXPECT_ACTIVE_SPRITES="${EXPECT_ACTIVE_SPRITES:-}"
+EXPECT_SPRITE_PEAK="${EXPECT_SPRITE_PEAK:-}"
 IDF_EXPORT="${IDF_EXPORT:-$HOME/esp/esp-idf/export.sh}"
 
 fail() {
-    printf 'compose_smoke: FAIL: %s\n' "$*" >&2
-    printf 'compose_smoke: monitor log: %s\n' "$MONITOR_LOG" >&2
+    printf '%s: FAIL: %s\n' "$RUN_NAME" "$*" >&2
+    printf '%s: monitor log: %s\n' "$RUN_NAME" "$MONITOR_LOG" >&2
     exit 1
 }
 
@@ -36,11 +40,18 @@ prepare_sdkconfig() {
 
     sed -i -E '/^(# )?CONFIG_CRT_RENDER_MODE_(COMPOSE|RGB332_FB|RGB332_COMPOSE|STIMULUS)(=y| is not set)$/d' \
         "$SDKCONFIG_TMP"
+    sed -i -E '/^(# )?CONFIG_CRT_COMPOSE_STRESS_DEMO(=y| is not set)$/d' \
+        "$SDKCONFIG_TMP"
     {
         printf 'CONFIG_CRT_RENDER_MODE_COMPOSE=y\n'
         printf '# CONFIG_CRT_RENDER_MODE_RGB332_FB is not set\n'
         printf '# CONFIG_CRT_RENDER_MODE_RGB332_COMPOSE is not set\n'
         printf '# CONFIG_CRT_RENDER_MODE_STIMULUS is not set\n'
+        if [[ "$COMPOSE_STRESS" == "1" ]]; then
+            printf 'CONFIG_CRT_COMPOSE_STRESS_DEMO=y\n'
+        else
+            printf '# CONFIG_CRT_COMPOSE_STRESS_DEMO is not set\n'
+        fi
     } >>"$SDKCONFIG_TMP"
 }
 
@@ -56,7 +67,7 @@ validate_monitor() {
     ((${#budget_lines[@]} >= MIN_WINDOWS)) ||
         fail "expected at least ${MIN_WINDOWS} compose_budget windows, got ${#budget_lines[@]}"
 
-    local line underruns sprite_overflow materialized fused max_layers
+    local line underruns sprite_overflow materialized fused max_layers sprites sprite_peak sprite_cap
     local i=0
     for line in "${budget_lines[@]}"; do
         i=$((i + 1))
@@ -65,6 +76,9 @@ validate_monitor() {
         materialized="$(extract_u32 compose_materialized "$line")"
         fused="$(extract_u32 compose_fused "$line")"
         max_layers="$(extract_u32 compose_max_layers "$line")"
+        sprites="$(extract_u32 sprites "$line")"
+        sprite_peak="$(sed -n 's/.*sprite_peak=\([0-9][0-9]*\)\/[0-9][0-9]*.*/\1/p' <<<"$line")"
+        sprite_cap="$(sed -n 's/.*sprite_peak=[0-9][0-9]*\/\([0-9][0-9]*\).*/\1/p' <<<"$line")"
 
         [[ -n "$underruns" && -n "$sprite_overflow" && -n "$materialized" && -n "$fused" && -n "$max_layers" ]] ||
             fail "window ${i}: could not parse compose_budget counters"
@@ -75,9 +89,23 @@ validate_monitor() {
         ((fused <= MAX_COMPOSE_FUSED)) ||
             fail "window ${i}: compose_fused=${fused} exceeds ${MAX_COMPOSE_FUSED}; stats may be accumulating"
         ((max_layers > 0)) || fail "window ${i}: compose_max_layers=${max_layers}"
+        if [[ -n "$EXPECT_ACTIVE_SPRITES" ]]; then
+            [[ -n "$sprites" ]] || fail "window ${i}: could not parse sprites"
+            ((sprites == EXPECT_ACTIVE_SPRITES)) ||
+                fail "window ${i}: sprites=${sprites}, expected ${EXPECT_ACTIVE_SPRITES}"
+        fi
+        if [[ -n "$EXPECT_SPRITE_PEAK" ]]; then
+            [[ -n "$sprite_peak" && -n "$sprite_cap" ]] ||
+                fail "window ${i}: could not parse sprite_peak"
+            ((sprite_peak == EXPECT_SPRITE_PEAK)) ||
+                fail "window ${i}: sprite_peak=${sprite_peak}, expected ${EXPECT_SPRITE_PEAK}"
+            ((sprite_cap == EXPECT_SPRITE_PEAK)) ||
+                fail "window ${i}: sprite_peak cap=${sprite_cap}, expected ${EXPECT_SPRITE_PEAK}"
+        fi
 
-        printf 'compose_smoke: window %u fused=%u materialized=%u max_layers=%u underruns=%u sprite_overflow=%u\n' \
-            "$i" "$fused" "$materialized" "$max_layers" "$underruns" "$sprite_overflow"
+        printf '%s: window %u fused=%u materialized=%u max_layers=%u underruns=%u sprite_overflow=%u sprite_peak=%s/%s\n' \
+            "$RUN_NAME" "$i" "$fused" "$materialized" "$max_layers" "$underruns" "$sprite_overflow" \
+            "${sprite_peak:-?}" "${sprite_cap:-?}"
     done
 }
 
@@ -85,4 +113,4 @@ prepare_sdkconfig
 run_idf -B "$BUILD_DIR" -DSDKCONFIG="$SDKCONFIG_TMP" -p "$PORT" build flash
 capture_monitor
 validate_monitor
-printf 'compose_smoke: OK port=%s windows=%u log=%s\n' "$PORT" "${#budget_lines[@]}" "$MONITOR_LOG"
+printf '%s: OK port=%s windows=%u log=%s\n' "$RUN_NAME" "$PORT" "${#budget_lines[@]}" "$MONITOR_LOG"

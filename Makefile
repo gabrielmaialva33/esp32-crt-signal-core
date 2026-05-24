@@ -7,7 +7,7 @@ BAUD ?= 115200
 
 # ── Build ────────────────────────────────────────────────────────────
 
-.PHONY: build flash monitor clean menuconfig fullclean hw-compose-smoke
+.PHONY: build flash monitor clean menuconfig fullclean hw-compose-smoke hw-compose-stress
 
 build:
 	idf.py build
@@ -23,6 +23,13 @@ fm: flash monitor  ## Flash + monitor (most common)
 
 hw-compose-smoke:  ## Build, flash, and validate COMPOSE diagnostics on ESP32 hardware
 	@PORT="$(HW_PORT)" tools/hw/compose_smoke.sh
+
+hw-compose-stress:  ## Build, flash, and validate worst-case COMPOSE diagnostics on ESP32 hardware
+	@RUN_NAME="compose_stress" COMPOSE_STRESS=1 BUILD_DIR="build/compose-stress" \
+		SDKCONFIG_TMP="/tmp/esp32-crt-compose-stress-sdkconfig" \
+		MONITOR_LOG="/tmp/esp32-crt-compose-stress-monitor.log" \
+		EXPECT_ACTIVE_SPRITES=8 EXPECT_SPRITE_PEAK=8 \
+		PORT="$(HW_PORT)" tools/hw/compose_smoke.sh
 
 clean:
 	idf.py fullclean

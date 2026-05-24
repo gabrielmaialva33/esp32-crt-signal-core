@@ -26,6 +26,10 @@
 #include "sdkconfig.h"
 #include "tile_demo.h"
 
+#ifndef CONFIG_CRT_COMPOSE_STRESS_DEMO
+#define CONFIG_CRT_COMPOSE_STRESS_DEMO 0
+#endif
+
 #if CONFIG_CRT_ENABLE_UART_UPLOAD
 #include "driver/uart.h"
 #include "driver/uart_vfs.h"
@@ -72,30 +76,50 @@ static uint8_t s_checker_layer_idx = CRT_COMPOSE_LAYER_INVALID;
 
 /* Sprite atlas storage for the PPU facade demo. Sprite rows are patched as
  * spans over the fused tile base, avoiding full-line sprite materialization. */
-DRAM_ATTR static uint8_t s_sprite_atlas_data[64 * 16];
-static crt_sprite_atlas_t s_sprite_atlas;
-
 enum {
+#if CONFIG_CRT_COMPOSE_STRESS_DEMO
+    APP_DEMO_SPRITE_COUNT = CRT_SPRITE_DEFAULT_PERLINE,
+#else
     APP_DEMO_SPRITE_COUNT = 3,
+#endif
+    APP_SPRITE_ATLAS_W = APP_DEMO_SPRITE_COUNT * 16,
+    APP_SPRITE_ATLAS_H = 16,
 };
 
+DRAM_ATTR static uint8_t s_sprite_atlas_data[APP_SPRITE_ATLAS_W * APP_SPRITE_ATLAS_H];
+static crt_sprite_atlas_t s_sprite_atlas;
+
 static uint8_t s_sprite_ids[APP_DEMO_SPRITE_COUNT];
+#if CONFIG_CRT_COMPOSE_STRESS_DEMO
+static const uint8_t s_sprite_attrs[APP_DEMO_SPRITE_COUNT] = {
+    0U,
+    CRT_SPRITE_ATTR_HFLIP,
+    CRT_SPRITE_ATTR_VFLIP,
+    (uint8_t)(CRT_SPRITE_ATTR_HFLIP | CRT_SPRITE_ATTR_VFLIP),
+    (uint8_t)(1U << CRT_SPRITE_ATTR_PALETTE_SHIFT),
+    (uint8_t)(CRT_SPRITE_ATTR_HFLIP | (1U << CRT_SPRITE_ATTR_PALETTE_SHIFT)),
+    CRT_SPRITE_ATTR_BG_PRIORITY,
+    (uint8_t)(CRT_SPRITE_ATTR_BG_PRIORITY | CRT_SPRITE_ATTR_VFLIP |
+              (1U << CRT_SPRITE_ATTR_PALETTE_SHIFT)),
+};
+#else
 static const uint8_t s_sprite_attrs[APP_DEMO_SPRITE_COUNT] = {
     0U,
     CRT_SPRITE_ATTR_HFLIP,
     (uint8_t)(CRT_SPRITE_ATTR_VFLIP | (1U << CRT_SPRITE_ATTR_PALETTE_SHIFT)),
 };
+#endif
 
 static void demo_sprite_atlas_fill(void)
 {
-    static const uint8_t k_colors[APP_DEMO_SPRITE_COUNT] = {64U, 160U, 240U};
     for (size_t s = 0; s < APP_DEMO_SPRITE_COUNT; ++s) {
+        const uint8_t color = (uint8_t)(48U + (uint8_t)(s * 24U));
         for (uint8_t y = 0; y < 16U; ++y) {
-            uint8_t *row = &s_sprite_atlas_data[(size_t)y * 64U + (size_t)s * 16U];
+            uint8_t *row = &s_sprite_atlas_data[(size_t)y * APP_SPRITE_ATLAS_W + (size_t)s * 16U];
             for (uint8_t x = 0; x < 16U; ++x) {
                 /* 1px transparent border + filled interior: gives the
                  * sprite a visible silhouette when overlapping the BG. */
-                row[x] = (x == 0 || x == 15 || y == 0 || y == 15) ? 0U : k_colors[s];
+                row[x] = (x == 0 || x == 15 || y == 0 || y == 15) ? 0U : color;
             }
         }
     }
@@ -157,6 +181,16 @@ IRAM_ATTR static void demo_frame_hook(uint32_t frame, void *user_data)
 
     crt_ppu_set_scroll(&s_ppu, (int)(frame % (TILE_VISIBLE_W * 8U)), 0);
 
+#if CONFIG_CRT_COMPOSE_STRESS_DEMO
+    for (size_t i = 0; i < APP_DEMO_SPRITE_COUNT; ++i) {
+        if (s_sprite_ids[i] == CRT_SPRITE_INVALID_ID) {
+            continue;
+        }
+        const int16_t x = (int16_t)((frame + (uint32_t)(i * 29U)) % (256U - 16U));
+        const int16_t y = 96;
+        crt_ppu_set_sprite_position(&s_ppu, s_sprite_ids[i], x, y);
+    }
+#else
     /* Sprite world is logical 256x240. Bounce inside
      * [0 .. 256-16] horizontally and [0 .. 240-16] vertically per sprite. */
     static int16_t s_dx[APP_DEMO_SPRITE_COUNT] = {1, -1, 2};
@@ -179,6 +213,7 @@ IRAM_ATTR static void demo_frame_hook(uint32_t frame, void *user_data)
         }
         crt_ppu_move_sprite_by(&s_ppu, s_sprite_ids[i], s_dx[i], s_dy[i]);
     }
+#endif
 }
 
 /* PRC calibration mode pre-rasterizes the static target into the indexed-8
@@ -1056,7 +1091,8 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
         tile_demo_fill_nametable(s_tile_nametable, TILE_PITCH_W);
         demo_tile_attrs_fill();
         demo_sprite_atlas_fill();
-        crt_sprite_atlas_init(&s_sprite_atlas, s_sprite_atlas_data, 64U, 16U, 64U);
+        crt_sprite_atlas_init(&s_sprite_atlas, s_sprite_atlas_data, APP_SPRITE_ATLAS_W,
+                              APP_SPRITE_ATLAS_H, APP_SPRITE_ATLAS_W);
 
         crt_ppu_config_t ppu_config = {
             .visible_w_tiles = TILE_VISIBLE_W,
@@ -1083,6 +1119,18 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
         for (size_t i = 0; i < APP_DEMO_SPRITE_COUNT; ++i) {
             s_sprite_ids[i] = CRT_SPRITE_INVALID_ID;
         }
+#if CONFIG_CRT_COMPOSE_STRESS_DEMO
+        for (size_t i = 0; i < APP_DEMO_SPRITE_COUNT; ++i) {
+            ppu_err =
+                crt_ppu_add_sprite(&s_ppu, (uint16_t)(i * 2U), 0, CRT_SPRITE_SIZE_16X16,
+                                   (int16_t)(i * 29U), 96, s_sprite_attrs[i], &s_sprite_ids[i]);
+            if (ppu_err != ESP_OK) {
+                ESP_LOGE(TAG, "crt_ppu_add_sprite[%u] failed: %s", (unsigned)i,
+                         esp_err_to_name(ppu_err));
+                return ppu_err;
+            }
+        }
+#else
         static const int16_t k_sprite_x[APP_DEMO_SPRITE_COUNT] = {24, 112, 184};
         static const int16_t k_sprite_y[APP_DEMO_SPRITE_COUNT] = {32, 96, 152};
         for (size_t i = 0; i < APP_DEMO_SPRITE_COUNT; ++i) {
@@ -1095,6 +1143,7 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
                 return ppu_err;
             }
         }
+#endif
 
         /* Reserved primitives (kept declared for the next iteration). */
         (void)s_viewport_god;
@@ -1106,9 +1155,10 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
                                                         : crt_ppu_scanline_hook,
                                    &s_ppu);
         crt_register_frame_hook(demo_frame_hook, NULL);
-        ESP_LOGI(TAG, "compose: %s tile %ux%u (h-scroll) + sprite layer (%u active, max/line=%u)",
+        ESP_LOGI(TAG, "compose: %s tile %ux%u (h-scroll) + sprite layer (%u active, max/line=%u%s)",
                  k_use_rgb332_compose ? "rgb332" : "palette", TILE_VISIBLE_W, TILE_VISIBLE_H,
-                 (unsigned)APP_DEMO_SPRITE_COUNT, (unsigned)CRT_SPRITE_DEFAULT_PERLINE);
+                 (unsigned)APP_DEMO_SPRITE_COUNT, (unsigned)CRT_SPRITE_DEFAULT_PERLINE,
+                 CONFIG_CRT_COMPOSE_STRESS_DEMO ? ", stress" : "");
     }
 
     err = crt_core_start();
@@ -1141,12 +1191,14 @@ static void app_log_diag_snapshot(void)
         const crt_compose_stats_t compose_stats = crt_ppu_get_compose_stats(&s_ppu);
         ESP_LOGI(TAG,
                  "compose_budget: mode=%s attrs=tile banks=tile scroll=h sprites=%u max/line=%u "
-                 "sprite_attrs=flip+bank priority=tile active=%ux%u bank1=+%u sprite_peak=%u/%u "
+                 "sprite_attrs=flip+bank priority=%s active=%ux%u bank1=+%u sprite_peak=%u/%u "
                  "sprite_overflow=%" PRIu32 " compose_fused=%" PRIu32
                  " compose_materialized=%" PRIu32 " compose_max_layers=%u underruns=%" PRIu32
                  " queue_min=%" PRIu32 " prep_max=%" PRIu32 " cycles",
                  k_use_rgb332_compose ? "rgb332" : "palette", (unsigned)APP_DEMO_SPRITE_COUNT,
-                 (unsigned)CRT_SPRITE_DEFAULT_PERLINE, (unsigned)(TILE_VISIBLE_W * CRT_TILE_PX_W),
+                 (unsigned)CRT_SPRITE_DEFAULT_PERLINE,
+                 CONFIG_CRT_COMPOSE_STRESS_DEMO ? "tile+sprite" : "tile",
+                 (unsigned)(TILE_VISIBLE_W * CRT_TILE_PX_W),
                  (unsigned)(TILE_VISIBLE_H * CRT_TILE_PX_H), (unsigned)TILE_BANK1_LUMA_BOOST,
                  (unsigned)sprite_peak, (unsigned)CRT_SPRITE_DEFAULT_PERLINE, sprite_overflow,
                  compose_stats.fused_lines, compose_stats.materialized_lines,

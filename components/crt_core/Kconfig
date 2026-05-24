@@ -54,6 +54,17 @@ config CRT_RENDER_MODE_STIMULUS
 
 endchoice
 
+config CRT_COMPOSE_STRESS_DEMO
+    bool "Stress COMPOSE demo scene"
+    depends on CRT_RENDER_MODE_COMPOSE || CRT_RENDER_MODE_RGB332_COMPOSE
+    default n
+    help
+        Replaces the default lightweight COMPOSE demo sprite setup with a
+        controlled worst-case row: 8 visible sprites per scanline, scrolling
+        tiles, palette-bank attributes, flips, and sprite BG-priority flags.
+        This is intended for hardware timing smoke tests, not as the default
+        visual demo.
+
 config CRT_ENABLE_UART_UPLOAD
     bool "Enable UART framebuffer upload"
     default n
