@@ -80,6 +80,11 @@ enum {
 };
 
 static uint8_t s_sprite_ids[APP_DEMO_SPRITE_COUNT];
+static const uint8_t s_sprite_attrs[APP_DEMO_SPRITE_COUNT] = {
+    0U,
+    CRT_SPRITE_ATTR_HFLIP,
+    (uint8_t)(CRT_SPRITE_ATTR_VFLIP | (1U << CRT_SPRITE_ATTR_PALETTE_SHIFT)),
+};
 
 static void demo_sprite_atlas_fill(void)
 {
@@ -1075,7 +1080,8 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
         static const int16_t k_sprite_y[APP_DEMO_SPRITE_COUNT] = {32, 96, 152};
         for (size_t i = 0; i < APP_DEMO_SPRITE_COUNT; ++i) {
             ppu_err = crt_ppu_add_sprite(&s_ppu, (uint16_t)(i * 2U), 0, CRT_SPRITE_SIZE_16X16,
-                                         k_sprite_x[i], k_sprite_y[i], 0, &s_sprite_ids[i]);
+                                         k_sprite_x[i], k_sprite_y[i], s_sprite_attrs[i],
+                                         &s_sprite_ids[i]);
             if (ppu_err != ESP_OK) {
                 ESP_LOGE(TAG, "crt_ppu_add_sprite[%u] failed: %s", (unsigned)i,
                          esp_err_to_name(ppu_err));
@@ -1125,8 +1131,8 @@ static void app_log_diag_snapshot(void)
     if (app_uses_compose_demo()) {
         ESP_LOGI(TAG,
                  "compose_budget: mode=%s attrs=tile banks=tile scroll=h sprites=%u max/line=%u "
-                 "active=%ux%u bank1=+%u underruns=%" PRIu32 " queue_min=%" PRIu32
-                 " prep_max=%" PRIu32 " cycles",
+                 "sprite_attrs=flip+bank active=%ux%u bank1=+%u underruns=%" PRIu32
+                 " queue_min=%" PRIu32 " prep_max=%" PRIu32 " cycles",
                  k_use_rgb332_compose ? "rgb332" : "palette", (unsigned)APP_DEMO_SPRITE_COUNT,
                  (unsigned)CRT_SPRITE_DEFAULT_PERLINE, (unsigned)(TILE_VISIBLE_W * CRT_TILE_PX_W),
                  (unsigned)(TILE_VISIBLE_H * CRT_TILE_PX_H), (unsigned)TILE_BANK1_LUMA_BOOST,
