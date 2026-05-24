@@ -5,8 +5,7 @@
 
 #include "crt_demo_pattern.h"
 
-static void test_color_bars_row_splits_into_eight_regions(void)
-{
+static void test_color_bars_row_splits_into_eight_regions(void) {
     uint8_t pixels[16] = {0};
 
     crt_demo_pattern_build_color_bars_row(pixels, 16);
@@ -16,8 +15,7 @@ static void test_color_bars_row_splits_into_eight_regions(void)
     }
 }
 
-static void test_grayscale_ramp_spans_full_range(void)
-{
+static void test_grayscale_ramp_spans_full_range(void) {
     uint8_t pixels[5] = {0};
 
     crt_demo_pattern_build_grayscale_ramp_row(pixels, 5);
@@ -30,8 +28,7 @@ static void test_grayscale_ramp_spans_full_range(void)
     assert(pixels[3] <= pixels[4]);
 }
 
-static void test_ramp_region_occupies_bottom_lines_only(void)
-{
+static void test_ramp_region_occupies_bottom_lines_only(void) {
     crt_demo_pattern_runtime_t runtime = {
         .mode = CRT_DEMO_PATTERN_COLOR_BARS_RAMP,
         .active_line_count = 240,
@@ -43,8 +40,7 @@ static void test_ramp_region_occupies_bottom_lines_only(void)
     assert(crt_demo_pattern_is_ramp_region(&runtime, 239));
 }
 
-static void test_ntsc_yellow_bar_uses_legacy_composite_pattern(void)
-{
+static void test_ntsc_yellow_bar_uses_legacy_composite_pattern(void) {
     crt_demo_pattern_runtime_t runtime = {0};
     crt_demo_pattern_render_context_t ctx = {
         .video_standard = CRT_VIDEO_STANDARD_NTSC,
@@ -65,8 +61,7 @@ static void test_ntsc_yellow_bar_uses_legacy_composite_pattern(void)
     assert(memcmp(samples, expected, sizeof(expected)) == 0);
 }
 
-static void test_pal_yellow_bar_alternates_legacy_phase_by_line(void)
-{
+static void test_pal_yellow_bar_alternates_legacy_phase_by_line(void) {
     crt_demo_pattern_runtime_t runtime = {0};
     crt_demo_pattern_render_context_t even_ctx = {
         .video_standard = CRT_VIDEO_STANDARD_PAL,
@@ -101,8 +96,7 @@ static void test_pal_yellow_bar_alternates_legacy_phase_by_line(void)
     assert(memcmp(odd_samples, expected_odd, sizeof(expected_odd)) == 0);
 }
 
-static void test_standard_marker_differs_between_ntsc_and_pal(void)
-{
+static void test_standard_marker_differs_between_ntsc_and_pal(void) {
     crt_demo_pattern_runtime_t runtime = {0};
     crt_demo_pattern_render_context_t ntsc_ctx = {
         .video_standard = CRT_VIDEO_STANDARD_NTSC,
@@ -130,8 +124,7 @@ static void test_standard_marker_differs_between_ntsc_and_pal(void)
     assert(pal_samples[marker_sample] != ntsc_samples[marker_sample]);
 }
 
-int main(void)
-{
+int main(void) {
     test_color_bars_row_splits_into_eight_regions();
     test_grayscale_ramp_spans_full_range();
     test_ramp_region_occupies_bottom_lines_only();

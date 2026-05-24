@@ -30,20 +30,27 @@ typedef struct {
 
 esp_err_t crt_fb_surface_init(crt_fb_surface_t *surface, uint16_t width, uint16_t height,
                               crt_fb_format_t format);
+
 esp_err_t crt_fb_surface_alloc(crt_fb_surface_t *surface);
+
 esp_err_t crt_fb_surface_free(crt_fb_surface_t *surface);
+
 esp_err_t crt_fb_surface_deinit(crt_fb_surface_t *surface);
 
 /* ── Pixel access ─────────────────────────────────────────────────── */
 
 uint8_t *crt_fb_row(const crt_fb_surface_t *surface, uint16_t y);
+
 void crt_fb_put(crt_fb_surface_t *surface, uint16_t x, uint16_t y, uint8_t value);
+
 uint8_t crt_fb_get(const crt_fb_surface_t *surface, uint16_t x, uint16_t y);
+
 void crt_fb_clear(crt_fb_surface_t *surface, uint8_t value);
 
 /* ── Palette ──────────────────────────────────────────────────────── */
 
 void crt_fb_palette_set(crt_fb_surface_t *surface, uint8_t index, uint16_t dac_level);
+
 void crt_fb_palette_init_grayscale(crt_fb_surface_t *surface, uint16_t blank_level,
                                    uint16_t white_level);
 

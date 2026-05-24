@@ -13,7 +13,9 @@ extern "C" {
 #endif
 
 esp_err_t crt_timing_get_profile(crt_video_standard_t standard, crt_timing_profile_t *out_profile);
+
 crt_timing_line_type_t crt_timing_get_line_type(crt_video_standard_t standard, uint16_t line_index);
+
 crt_timing_line_type_t crt_timing_get_profile_line_type(const crt_timing_profile_t *profile,
                                                         uint16_t line_index);
 

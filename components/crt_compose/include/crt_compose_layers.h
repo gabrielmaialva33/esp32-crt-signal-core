@@ -54,20 +54,25 @@ typedef struct {
 } crt_compose_viewport_layer_t;
 
 void crt_compose_solid_layer_init(crt_compose_solid_layer_t *layer, uint8_t fill_idx);
+
 bool crt_compose_solid_layer_fetch(void *ctx, uint16_t logical_line, uint8_t *idx_out,
                                    uint16_t width);
 
 void crt_compose_rect_layer_init(crt_compose_rect_layer_t *layer, uint16_t x, uint16_t y,
                                  uint16_t width, uint16_t height, uint8_t fill_idx,
                                  uint8_t transparent_idx);
+
 void crt_compose_rect_layer_set_bounds(crt_compose_rect_layer_t *layer, uint16_t x, uint16_t y,
                                        uint16_t width, uint16_t height);
+
 void crt_compose_rect_layer_set_fill(crt_compose_rect_layer_t *layer, uint8_t fill_idx);
+
 bool crt_compose_rect_layer_fetch(void *ctx, uint16_t logical_line, uint8_t *idx_out,
                                   uint16_t width);
 
 void crt_compose_checker_layer_init(crt_compose_checker_layer_t *layer, uint8_t first_idx,
                                     uint8_t second_idx, uint8_t cell_w, uint8_t cell_h);
+
 bool crt_compose_checker_layer_fetch(void *ctx, uint16_t logical_line, uint8_t *idx_out,
                                      uint16_t width);
 
@@ -75,15 +80,20 @@ void crt_compose_viewport_layer_init(crt_compose_viewport_layer_t *layer,
                                      crt_layer_fetch_fn source_fetch, void *source_ctx,
                                      uint16_t source_width, uint16_t source_height,
                                      uint8_t transparent_idx);
+
 void crt_compose_viewport_layer_set_source(crt_compose_viewport_layer_t *layer,
                                            crt_layer_fetch_fn source_fetch, void *source_ctx,
                                            uint16_t source_width, uint16_t source_height);
+
 void crt_compose_viewport_layer_set_viewport(crt_compose_viewport_layer_t *layer, uint16_t x,
                                              uint16_t y, uint16_t width, uint16_t height);
+
 void crt_compose_viewport_layer_set_scroll(crt_compose_viewport_layer_t *layer, int32_t x,
                                            int32_t y);
+
 void crt_compose_viewport_layer_scroll_by(crt_compose_viewport_layer_t *layer, int32_t dx,
                                           int32_t dy);
+
 bool crt_compose_viewport_layer_fetch(void *ctx, uint16_t logical_line, uint8_t *idx_out,
                                       uint16_t width);
 

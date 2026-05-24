@@ -230,8 +230,7 @@ static const uint8_t tile_demo_patterns[TILE_DEMO_COUNT * 64] = {
  * All 30 visible rows together stitch a test card that exercises every
  * pattern tile at least once. Unused pitch rows 30-31 stay zero. */
 
-static inline void tile_demo_fill_nametable(uint8_t *nt, uint16_t pitch_w)
-{
+static inline void tile_demo_fill_nametable(uint8_t *nt, uint16_t pitch_w) {
     for (uint16_t r = 0; r < 32; ++r) {
         uint8_t tile;
         if (r == 0 || r == 29)
@@ -245,7 +244,7 @@ static inline void tile_demo_fill_nametable(uint8_t *nt, uint16_t pitch_w)
         else
             tile = ((r & 1u) == 0) ? 3u : 5u;
         for (uint16_t c = 0; c < pitch_w; ++c) {
-            nt[(size_t)r * pitch_w + c] = tile;
+            nt[(size_t) r * pitch_w + c] = tile;
         }
     }
 }

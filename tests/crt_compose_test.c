@@ -28,25 +28,22 @@ static uint8_t g_tile_attrs[32 * 32];
 static uint8_t g_palette_bank_1[256];
 static crt_compose_palette_banks_t g_palette_banks;
 
-static void init_linear_palette(void)
-{
+static void init_linear_palette(void) {
     for (int i = 0; i < 256; ++i) {
         g_palette[i] = (uint16_t)(i << 8);
     }
 }
 
-static void init_palette_bank_one(uint8_t from, uint8_t to)
-{
+static void init_palette_bank_one(uint8_t from, uint8_t to) {
     memset(&g_palette_banks, 0, sizeof(g_palette_banks));
     for (int i = 0; i < 256; ++i) {
-        g_palette_bank_1[i] = (uint8_t)i;
+        g_palette_bank_1[i] = (uint8_t) i;
     }
     g_palette_bank_1[from] = to;
     g_palette_banks.banks[1] = g_palette_bank_1;
 }
 
-static void render_palette_256_to_768_expected(const uint8_t *src256, uint16_t *dst768)
-{
+static void render_palette_256_to_768_expected(const uint8_t *src256, uint16_t *dst768) {
     uint16_t out = 0;
     uint16_t pending = 0;
     bool have_pending = false;
@@ -69,8 +66,7 @@ static void render_palette_256_to_768_expected(const uint8_t *src256, uint16_t *
     assert(out == CRT_COMPOSITE_RGB332_ACTIVE_WIDTH);
 }
 
-static void init_sprite_atlas(void)
-{
+static void init_sprite_atlas(void) {
     memset(g_sprite_atlas, 0, sizeof(g_sprite_atlas));
     for (uint16_t y = 0; y < 32; ++y) {
         for (uint16_t x = 0; x < 256; ++x) {
@@ -80,18 +76,16 @@ static void init_sprite_atlas(void)
 }
 
 static void init_sprite_attr_marker_atlas(uint8_t top_left, uint8_t top_right,
-                                          uint8_t bottom_left, uint8_t bottom_right)
-{
+                                          uint8_t bottom_left, uint8_t bottom_right) {
     memset(g_sprite_atlas, 0, sizeof(g_sprite_atlas));
     g_sprite_atlas[0] = top_left;
     g_sprite_atlas[CRT_SPRITE_CELL_SIZE - 1U] = top_right;
     g_sprite_atlas[(7U * CRT_SPRITE_CELL_SIZE) + 0U] = bottom_left;
     g_sprite_atlas[(7U * CRT_SPRITE_CELL_SIZE) + (CRT_SPRITE_CELL_SIZE - 1U)] =
-        bottom_right;
+            bottom_right;
 }
 
-static void init_sprite_attr_layer(crt_sprite_layer_t *sprites, uint8_t *sprite_id)
-{
+static void init_sprite_attr_layer(crt_sprite_layer_t *sprites, uint8_t *sprite_id) {
     crt_sprite_atlas_t atlas;
     *sprite_id = CRT_SPRITE_INVALID_ID;
     assert(crt_sprite_atlas_init(&atlas, g_sprite_atlas, CRT_SPRITE_CELL_SIZE,
@@ -101,21 +95,28 @@ static void init_sprite_attr_layer(crt_sprite_layer_t *sprites, uint8_t *sprite_
     assert(*sprite_id == 0);
 }
 
-static crt_scanline_t make_active_line(uint16_t logical)
-{
+static crt_scanline_t make_active_line(uint16_t logical) {
     static crt_timing_profile_t timing;
     memset(&timing, 0, sizeof(timing));
     timing.total_lines = 262;
     timing.active_lines = 240;
     timing.standard = CRT_VIDEO_STANDARD_NTSC;
-    return (crt_scanline_t){
-        .physical_line = logical + 20,
-        .logical_line = logical,
-        .type = CRT_LINE_ACTIVE,
-        .field = 0,
-        .frame_number = 0,
-        .subcarrier_phase = 0,
-        .timing = &timing,
+    return (crt_scanline_t)
+    {
+        .
+        physical_line = logical + 20,
+        .
+        logical_line = logical,
+        .
+        type = CRT_LINE_ACTIVE,
+        .
+        field = 0,
+        .
+        frame_number = 0,
+        .
+        subcarrier_phase = 0,
+        .
+        timing = &timing,
     };
 }
 
@@ -125,11 +126,10 @@ typedef struct {
     uint8_t step;
 } pattern_ctx_t;
 
-static bool pattern_fetch(void *ctx, uint16_t logical_line, uint8_t *idx_out, uint16_t width)
-{
-    const pattern_ctx_t *p = (const pattern_ctx_t *)ctx;
+static bool pattern_fetch(void *ctx, uint16_t logical_line, uint8_t *idx_out, uint16_t width) {
+    const pattern_ctx_t *p = (const pattern_ctx_t *) ctx;
     for (uint16_t x = 0; x < width; ++x) {
-        idx_out[x] = (uint8_t)(p->base + (logical_line * p->step) + (uint8_t)x);
+        idx_out[x] = (uint8_t)(p->base + (logical_line * p->step) + (uint8_t) x);
     }
     return true;
 }
@@ -140,10 +140,9 @@ typedef struct {
     uint8_t key;
 } sprite_ctx_t;
 
-static bool sprite_fetch(void *ctx, uint16_t logical_line, uint8_t *idx_out, uint16_t width)
-{
-    const sprite_ctx_t *s = (const sprite_ctx_t *)ctx;
-    (void)logical_line;
+static bool sprite_fetch(void *ctx, uint16_t logical_line, uint8_t *idx_out, uint16_t width) {
+    const sprite_ctx_t *s = (const sprite_ctx_t *) ctx;
+    (void) logical_line;
     for (uint16_t x = 0; x < width; ++x) {
         idx_out[x] = (x % 3 == 0) ? s->value : s->key;
     }
@@ -157,9 +156,8 @@ static uint32_t g_mock_base_override_calls;
 static uint32_t g_mock_absent_overlay_calls;
 
 /* mock_base_fetch: writes `(x + y) & 0xFF` per pixel. */
-static bool mock_base_fetch(void *ctx, uint16_t logical_line, uint8_t *idx_out, uint16_t width)
-{
-    (void)ctx;
+static bool mock_base_fetch(void *ctx, uint16_t logical_line, uint8_t *idx_out, uint16_t width) {
+    (void) ctx;
     g_mock_base_fetch_calls++;
     for (uint16_t x = 0; x < width; ++x) {
         idx_out[x] = (uint8_t)(x + logical_line);
@@ -171,13 +169,12 @@ static bool mock_base_fetch(void *ctx, uint16_t logical_line, uint8_t *idx_out, 
  * as the generic compose output pass. Guarantees bit-exact parity with
  * mock_base_fetch + palette + swap. */
 static void mock_base_override(const crt_scanline_t *scanline, uint16_t *active_buf,
-                               uint16_t active_width, void *user_data)
-{
-    (void)user_data;
+                               uint16_t active_width, void *user_data) {
+    (void) user_data;
     g_mock_base_override_calls++;
     const uint16_t *pal = g_palette;
     const uint16_t y = scanline->logical_line;
-    const uint16_t even_width = active_width & (uint16_t)~1U;
+    const uint16_t even_width = active_width & (uint16_t) ~1U;
     uint16_t i = 0;
     for (; i < even_width; i += 2) {
         uint16_t p0 = pal[(uint8_t)(i + y)];
@@ -193,18 +190,16 @@ static void mock_base_override(const crt_scanline_t *scanline, uint16_t *active_
 /* mock_absent_overlay_fetch: keyed layer that never contributes. Must NOT
  * touch idx_out; compose is required to skip merge when false is returned. */
 static bool mock_absent_overlay_fetch(void *ctx, uint16_t logical_line, uint8_t *idx_out,
-                                      uint16_t width)
-{
-    (void)ctx;
-    (void)logical_line;
-    (void)idx_out;
-    (void)width;
+                                      uint16_t width) {
+    (void) ctx;
+    (void) logical_line;
+    (void) idx_out;
+    (void) width;
     g_mock_absent_overlay_calls++;
     return false;
 }
 
-static void reset_mock_counters(void)
-{
+static void reset_mock_counters(void) {
     g_mock_base_fetch_calls = 0;
     g_mock_base_override_calls = 0;
     g_mock_absent_overlay_calls = 0;
@@ -216,10 +211,9 @@ typedef struct {
     uint8_t fill;
 } counting_ctx_t;
 
-static bool counting_fetch(void *ctx, uint16_t logical_line, uint8_t *idx_out, uint16_t width)
-{
-    counting_ctx_t *c = (counting_ctx_t *)ctx;
-    (void)logical_line;
+static bool counting_fetch(void *ctx, uint16_t logical_line, uint8_t *idx_out, uint16_t width) {
+    counting_ctx_t *c = (counting_ctx_t *) ctx;
+    (void) logical_line;
     c->calls++;
     memset(idx_out, c->fill, width);
     return true;
@@ -227,8 +221,7 @@ static bool counting_fetch(void *ctx, uint16_t logical_line, uint8_t *idx_out, u
 
 /* ── Tests ────────────────────────────────────────────────────────── */
 
-static void test_init_and_palette(void)
-{
+static void test_init_and_palette(void) {
     crt_compose_t c;
     assert(crt_compose_init(&c) == 0);
     assert(c.layer_count == 0);
@@ -251,8 +244,7 @@ static void test_init_and_palette(void)
     printf("  init/palette: OK\n");
 }
 
-static void test_add_layer_limits(void)
-{
+static void test_add_layer_limits(void) {
     crt_compose_t c;
     crt_compose_init(&c);
 
@@ -269,8 +261,7 @@ static void test_add_layer_limits(void)
     printf("  add/clear layers: OK\n");
 }
 
-static void test_layer_ids_and_info(void)
-{
+static void test_layer_ids_and_info(void) {
     crt_compose_t c;
     crt_compose_init(&c);
 
@@ -301,8 +292,7 @@ static void test_layer_ids_and_info(void)
     printf("  layer ids + info: OK\n");
 }
 
-static void test_single_opaque_layer_with_swap(void)
-{
+static void test_single_opaque_layer_with_swap(void) {
     crt_compose_t c;
     crt_compose_init(&c);
     init_linear_palette();
@@ -333,8 +323,7 @@ static void test_single_opaque_layer_with_swap(void)
     printf("  single opaque + word-swap: OK\n");
 }
 
-static void test_odd_width_tail(void)
-{
+static void test_odd_width_tail(void) {
     crt_compose_t c;
     crt_compose_init(&c);
     init_linear_palette();
@@ -353,8 +342,7 @@ static void test_odd_width_tail(void)
     printf("  odd-width tail: OK\n");
 }
 
-static void test_transparent_overlay(void)
-{
+static void test_transparent_overlay(void) {
     crt_compose_t c;
     crt_compose_init(&c);
     init_linear_palette();
@@ -392,8 +380,7 @@ static void test_transparent_overlay(void)
     printf("  transparent overlay z-order: OK\n");
 }
 
-static void test_disabled_layer_skipped(void)
-{
+static void test_disabled_layer_skipped(void) {
     crt_compose_t c;
     crt_compose_init(&c);
     init_linear_palette();
@@ -417,19 +404,17 @@ static void test_disabled_layer_skipped(void)
     printf("  disabled layer + clear_idx: OK\n");
 }
 
-static bool absent_fetch(void *ctx, uint16_t logical_line, uint8_t *idx_out, uint16_t width)
-{
-    uint32_t *calls = (uint32_t *)ctx;
-    (void)logical_line;
-    (void)idx_out;
-    (void)width;
+static bool absent_fetch(void *ctx, uint16_t logical_line, uint8_t *idx_out, uint16_t width) {
+    uint32_t *calls = (uint32_t *) ctx;
+    (void) logical_line;
+    (void) idx_out;
+    (void) width;
     (*calls)++;
     /* Deliberately do not touch idx_out: compose must not read it back. */
     return false;
 }
 
-static void test_keyed_absent_skips_merge(void)
-{
+static void test_keyed_absent_skips_merge(void) {
     crt_compose_t c;
     crt_compose_init(&c);
     init_linear_palette();
@@ -456,8 +441,7 @@ static void test_keyed_absent_skips_merge(void)
     printf("  keyed absent fetch skips merge: OK\n");
 }
 
-static void test_layer_context_and_fetch_mutation(void)
-{
+static void test_layer_context_and_fetch_mutation(void) {
     crt_compose_t c;
     crt_compose_init(&c);
     init_linear_palette();
@@ -490,8 +474,7 @@ static void test_layer_context_and_fetch_mutation(void)
     printf("  layer context/fetch mutation: OK\n");
 }
 
-static void test_layer_transparency_mutation(void)
-{
+static void test_layer_transparency_mutation(void) {
     crt_compose_t c;
     crt_compose_init(&c);
     init_linear_palette();
@@ -518,8 +501,7 @@ static void test_layer_transparency_mutation(void)
     printf("  layer transparency mutation: OK\n");
 }
 
-static void test_builtin_solid_layer(void)
-{
+static void test_builtin_solid_layer(void) {
     crt_compose_t c;
     crt_compose_init(&c);
     init_linear_palette();
@@ -540,8 +522,7 @@ static void test_builtin_solid_layer(void)
     printf("  builtin solid layer: OK\n");
 }
 
-static void test_builtin_rect_layer_overlay(void)
-{
+static void test_builtin_rect_layer_overlay(void) {
     crt_compose_t c;
     crt_compose_init(&c);
     init_linear_palette();
@@ -578,8 +559,7 @@ static void test_builtin_rect_layer_overlay(void)
     printf("  builtin rect overlay: OK\n");
 }
 
-static void test_builtin_checker_layer(void)
-{
+static void test_builtin_checker_layer(void) {
     crt_compose_t c;
     crt_compose_init(&c);
     init_linear_palette();
@@ -607,8 +587,7 @@ static void test_builtin_checker_layer(void)
     printf("  builtin checker layer: OK\n");
 }
 
-static void test_builtin_viewport_layer_scrolls_and_clips(void)
-{
+static void test_builtin_viewport_layer_scrolls_and_clips(void) {
     crt_compose_t c;
     crt_compose_init(&c);
     init_linear_palette();
@@ -661,8 +640,7 @@ static void test_builtin_viewport_layer_scrolls_and_clips(void)
     printf("  builtin viewport scroll/clip layer: OK\n");
 }
 
-static void test_sprite_atlas_and_basic_fetch(void)
-{
+static void test_sprite_atlas_and_basic_fetch(void) {
     init_sprite_atlas();
 
     crt_sprite_atlas_t atlas;
@@ -698,8 +676,7 @@ static void test_sprite_atlas_and_basic_fetch(void)
     printf("  sprite atlas + basic fetch: OK\n");
 }
 
-static void test_sprite_position_frame_size_and_scale(void)
-{
+static void test_sprite_position_frame_size_and_scale(void) {
     init_sprite_atlas();
 
     crt_sprite_atlas_t atlas;
@@ -736,8 +713,7 @@ static void test_sprite_position_frame_size_and_scale(void)
     printf("  sprite position/frame/size/scale: OK\n");
 }
 
-static void test_sprite_scale_always_logical(void)
-{
+static void test_sprite_scale_always_logical(void) {
     init_sprite_atlas();
 
     crt_sprite_atlas_t atlas;
@@ -755,8 +731,7 @@ static void test_sprite_scale_always_logical(void)
     printf("  sprite scale fixed to logical 256px: OK\n");
 }
 
-static void test_sprite_per_line_cap_and_overflow(void)
-{
+static void test_sprite_per_line_cap_and_overflow(void) {
     init_sprite_atlas();
 
     crt_sprite_atlas_t atlas;
@@ -784,8 +759,7 @@ static void test_sprite_per_line_cap_and_overflow(void)
     printf("  sprite per-line cap + overflow: OK\n");
 }
 
-static void test_sprite_attr_hflip_one_sprite(void)
-{
+static void test_sprite_attr_hflip_one_sprite(void) {
     init_sprite_attr_marker_atlas(0x11, 0x77, 0, 0);
 
     crt_sprite_layer_t sprites;
@@ -800,8 +774,7 @@ static void test_sprite_attr_hflip_one_sprite(void)
     printf("  sprite attr hflip: OK\n");
 }
 
-static void test_sprite_attr_vflip_one_sprite(void)
-{
+static void test_sprite_attr_vflip_one_sprite(void) {
     init_sprite_attr_marker_atlas(0x11, 0, 0x71, 0);
 
     crt_sprite_layer_t sprites;
@@ -816,8 +789,7 @@ static void test_sprite_attr_vflip_one_sprite(void)
     printf("  sprite attr vflip: OK\n");
 }
 
-static void test_sprite_attr_both_flip(void)
-{
+static void test_sprite_attr_both_flip(void) {
     init_sprite_attr_marker_atlas(0x11, 0x17, 0x71, 0x77);
 
     crt_sprite_layer_t sprites;
@@ -833,8 +805,7 @@ static void test_sprite_attr_both_flip(void)
     printf("  sprite attr both flip: OK\n");
 }
 
-static void test_sprite_attr_bg_priority_bit_preserved(void)
-{
+static void test_sprite_attr_bg_priority_bit_preserved(void) {
     init_sprite_attr_marker_atlas(0x11, 0x77, 0, 0);
 
     uint8_t plain[CRT_SPRITE_CELL_SIZE] = {0};
@@ -857,8 +828,7 @@ static void test_sprite_attr_bg_priority_bit_preserved(void)
     printf("  sprite attr bg priority preserved: OK\n");
 }
 
-static void test_sprite_attr_invalid_id_returns_error(void)
-{
+static void test_sprite_attr_invalid_id_returns_error(void) {
     init_sprite_attr_marker_atlas(0x11, 0x77, 0, 0);
 
     crt_sprite_layer_t sprites;
@@ -871,8 +841,7 @@ static void test_sprite_attr_invalid_id_returns_error(void)
     printf("  sprite attr invalid id: OK\n");
 }
 
-static void test_opaque_base_skips_clear(void)
-{
+static void test_opaque_base_skips_clear(void) {
     /* Ensure opaque layer 0 fully controls the line content regardless of
      * clear_idx (i.e. compose does not pre-fill and then overwrite). */
     crt_compose_t c;
@@ -897,8 +866,7 @@ static void test_opaque_base_skips_clear(void)
     printf("  opaque base bypasses clear: OK\n");
 }
 
-static void test_fused_base_solo_delegates(void)
-{
+static void test_fused_base_solo_delegates(void) {
     crt_compose_t c;
     crt_compose_init(&c);
     init_linear_palette();
@@ -927,8 +895,7 @@ static void test_fused_base_solo_delegates(void)
     printf("  fused base solo delegates direct: OK\n");
 }
 
-static void test_fused_base_plus_absent_overlay_delegates(void)
-{
+static void test_fused_base_plus_absent_overlay_delegates(void) {
     crt_compose_t c;
     crt_compose_init(&c);
     init_linear_palette();
@@ -956,8 +923,7 @@ static void test_fused_base_plus_absent_overlay_delegates(void)
     printf("  fused base + absent overlay still delegates: OK\n");
 }
 
-static void test_fused_base_plus_present_overlay_materializes(void)
-{
+static void test_fused_base_plus_present_overlay_materializes(void) {
     crt_compose_t c;
     crt_compose_init(&c);
     init_linear_palette();
@@ -986,8 +952,7 @@ static void test_fused_base_plus_present_overlay_materializes(void)
     printf("  fused base + present overlay materializes: OK\n");
 }
 
-static void test_fused_vs_generic_parity(void)
-{
+static void test_fused_vs_generic_parity(void) {
     /* Same logical content rendered via the override path and via the
      * generic fetch+palette+swap path must produce identical active_buf. */
     init_linear_palette();
@@ -1019,8 +984,7 @@ static void test_fused_vs_generic_parity(void)
     printf("  fused override parity with generic path: OK\n");
 }
 
-static void test_rgb332_256_tile_base_sprite_overlay(void)
-{
+static void test_rgb332_256_tile_base_sprite_overlay(void) {
     memset(g_tile_patterns, 0, sizeof(g_tile_patterns));
     memset(g_tile_nametable, 0, sizeof(g_tile_nametable));
     memset(g_sprite_atlas, 0, sizeof(g_sprite_atlas));
@@ -1071,8 +1035,7 @@ static void test_rgb332_256_tile_base_sprite_overlay(void)
     printf("  RGB332 256 logical tile + sprite -> 768 samples: OK\n");
 }
 
-static void test_grayscale_compose_256_expansion_parity(void)
-{
+static void test_grayscale_compose_256_expansion_parity(void) {
     memset(g_sprite_atlas, 0, sizeof(g_sprite_atlas));
 
     const uint8_t bg_idx = 0x24;
@@ -1116,8 +1079,7 @@ static void test_grayscale_compose_256_expansion_parity(void)
 }
 
 static void init_priority_scene(crt_tile_layer_t *tile, crt_sprite_layer_t *sprites,
-                                uint8_t tile_attr, uint8_t sprite_attr, uint8_t sprite_pixel)
-{
+                                uint8_t tile_attr, uint8_t sprite_attr, uint8_t sprite_pixel) {
     memset(g_tile_patterns, 0x24, sizeof(g_tile_patterns));
     memset(g_tile_nametable, 0, sizeof(g_tile_nametable));
     memset(g_tile_attrs, 0, sizeof(g_tile_attrs));
@@ -1140,8 +1102,7 @@ static void init_priority_scene(crt_tile_layer_t *tile, crt_sprite_layer_t *spri
 }
 
 static void assert_rgb332_line_matches(const crt_scanline_t *sc, const uint8_t *expected_logical,
-                                       const uint16_t *actual)
-{
+                                       const uint16_t *actual) {
     uint16_t expected[CRT_COMPOSITE_RGB332_ACTIVE_WIDTH] = {0};
     crt_composite_rgb332_render_256_to_768(CRT_VIDEO_STANDARD_NTSC, sc->physical_line,
                                            expected_logical, expected);
@@ -1151,8 +1112,7 @@ static void assert_rgb332_line_matches(const crt_scanline_t *sc, const uint8_t *
 }
 
 static void run_priority_case(uint8_t tile_attr, uint8_t sprite_attr, uint8_t sprite_pixel,
-                              uint8_t expected_pixel)
-{
+                              uint8_t expected_pixel) {
     const uint8_t bg_idx = 0x24;
     const uint8_t sprite_idx = sprite_pixel;
     crt_tile_layer_t tile;
@@ -1188,8 +1148,7 @@ static void run_priority_case(uint8_t tile_attr, uint8_t sprite_attr, uint8_t sp
 }
 
 static void init_palette_bank_tile_scene(crt_tile_layer_t *tile, uint8_t tile_attr,
-                                         uint8_t tile_pixel)
-{
+                                         uint8_t tile_pixel) {
     memset(g_tile_patterns, tile_pixel, sizeof(g_tile_patterns));
     memset(g_tile_nametable, 0, sizeof(g_tile_nametable));
     memset(g_tile_attrs, 0, sizeof(g_tile_attrs));
@@ -1201,8 +1160,7 @@ static void init_palette_bank_tile_scene(crt_tile_layer_t *tile, uint8_t tile_at
 }
 
 static void init_palette_bank_sprite_scene(crt_tile_layer_t *tile, crt_sprite_layer_t *sprites,
-                                           uint8_t sprite_attr, uint8_t sprite_pixel)
-{
+                                           uint8_t sprite_attr, uint8_t sprite_pixel) {
     memset(g_tile_patterns, 0x24, sizeof(g_tile_patterns));
     memset(g_tile_nametable, 0, sizeof(g_tile_nametable));
     memset(g_sprite_atlas, 0, sizeof(g_sprite_atlas));
@@ -1220,8 +1178,7 @@ static void init_palette_bank_sprite_scene(crt_tile_layer_t *tile, crt_sprite_la
     assert(crt_sprite_set_attr(sprites, sprite_id, sprite_attr) == 0);
 }
 
-static void test_palette_bank_identity_when_unbound(void)
-{
+static void test_palette_bank_identity_when_unbound(void) {
     init_linear_palette();
     crt_scanline_t sc = make_active_line(0);
     const uint8_t bank_attr = (uint8_t)(1u << CRT_TILE_ATTR_PALETTE_SHIFT);
@@ -1259,8 +1216,7 @@ static void test_palette_bank_identity_when_unbound(void)
     printf("  palette bank identity when unbound: OK\n");
 }
 
-static void test_palette_bank_remap_tile(void)
-{
+static void test_palette_bank_remap_tile(void) {
     init_linear_palette();
     init_palette_bank_one(0x10, 0x22);
 
@@ -1295,8 +1251,7 @@ static void test_palette_bank_remap_tile(void)
     printf("  palette bank remaps tile pixels: OK\n");
 }
 
-static void test_palette_bank_remap_sprite(void)
-{
+static void test_palette_bank_remap_sprite(void) {
     init_linear_palette();
     init_palette_bank_one(0x10, 0x22);
 
@@ -1332,8 +1287,7 @@ static void test_palette_bank_remap_sprite(void)
     printf("  palette bank remaps sprite pixels: OK\n");
 }
 
-static void test_palette_bank_out_of_range_is_identity(void)
-{
+static void test_palette_bank_out_of_range_is_identity(void) {
     init_linear_palette();
     memset(&g_palette_banks, 0, sizeof(g_palette_banks));
 
@@ -1360,38 +1314,32 @@ static void test_palette_bank_out_of_range_is_identity(void)
     printf("  palette bank unbound entry is identity: OK\n");
 }
 
-static void test_priority_default_sprite_wins(void)
-{
+static void test_priority_default_sprite_wins(void) {
     run_priority_case(0, 0, 0xFC, 0xFC);
     printf("  priority default sprite wins: OK\n");
 }
 
-static void test_priority_tile_attr_over_sprite(void)
-{
+static void test_priority_tile_attr_over_sprite(void) {
     run_priority_case(CRT_TILE_ATTR_PRIORITY, 0, 0xFC, 0x24);
     printf("  priority tile attr over sprite: OK\n");
 }
 
-static void test_priority_sprite_bg_priority(void)
-{
+static void test_priority_sprite_bg_priority(void) {
     run_priority_case(0, CRT_SPRITE_ATTR_BG_PRIORITY, 0xFC, 0x24);
     printf("  priority sprite bg priority: OK\n");
 }
 
-static void test_priority_both_bits_set(void)
-{
+static void test_priority_both_bits_set(void) {
     run_priority_case(CRT_TILE_ATTR_PRIORITY, CRT_SPRITE_ATTR_BG_PRIORITY, 0xFC, 0x24);
     printf("  priority both bits set: OK\n");
 }
 
-static void test_priority_transparent_sprite_unchanged(void)
-{
+static void test_priority_transparent_sprite_unchanged(void) {
     run_priority_case(CRT_TILE_ATTR_PRIORITY, CRT_SPRITE_ATTR_BG_PRIORITY, 0, 0x24);
     printf("  priority transparent sprite unchanged: OK\n");
 }
 
-static void test_priority_no_attrs_baseline_unchanged(void)
-{
+static void test_priority_no_attrs_baseline_unchanged(void) {
     memset(g_tile_patterns, 0x24, sizeof(g_tile_patterns));
     memset(g_tile_nametable, 0, sizeof(g_tile_nametable));
     memset(g_sprite_atlas, 0, sizeof(g_sprite_atlas));
@@ -1434,8 +1382,7 @@ static void test_priority_no_attrs_baseline_unchanged(void)
     printf("  priority no attrs baseline unchanged: OK\n");
 }
 
-static void test_swap_layers_changes_priority(void)
-{
+static void test_swap_layers_changes_priority(void) {
     crt_compose_t c;
     crt_compose_init(&c);
     init_linear_palette();
@@ -1467,8 +1414,7 @@ static void test_swap_layers_changes_priority(void)
     printf("  layer priority swap: OK\n");
 }
 
-static void test_non_active_line_noop(void)
-{
+static void test_non_active_line_noop(void) {
     crt_compose_t c;
     crt_compose_init(&c);
     init_linear_palette();
@@ -1491,8 +1437,7 @@ static void test_non_active_line_noop(void)
     printf("  non-active line is no-op: OK\n");
 }
 
-static void test_missing_palette_noop(void)
-{
+static void test_missing_palette_noop(void) {
     crt_compose_t c;
     crt_compose_init(&c);
     /* No palette set */
@@ -1509,8 +1454,7 @@ static void test_missing_palette_noop(void)
     printf("  missing palette is no-op: OK\n");
 }
 
-static void test_width_overflow_guarded(void)
-{
+static void test_width_overflow_guarded(void) {
     crt_compose_t c;
     crt_compose_init(&c);
     init_linear_palette();
@@ -1529,8 +1473,7 @@ static void test_width_overflow_guarded(void)
     printf("  oversize width guarded: OK\n");
 }
 
-static void test_invalid_hook_inputs_noop(void)
-{
+static void test_invalid_hook_inputs_noop(void) {
     crt_compose_t c;
     crt_compose_init(&c);
     init_linear_palette();
@@ -1553,8 +1496,7 @@ static void test_invalid_hook_inputs_noop(void)
 
 /* ── Main ─────────────────────────────────────────────────────────── */
 
-int main(void)
-{
+int main(void) {
     printf("crt_compose test\n");
     test_init_and_palette();
     test_add_layer_limits();

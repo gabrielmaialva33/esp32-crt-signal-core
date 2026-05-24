@@ -18,28 +18,33 @@
 
 static uint16_t g_palette[256];
 
-static void init_linear_palette(void)
-{
+static void init_linear_palette(void) {
     for (int i = 0; i < 256; ++i) {
         g_palette[i] = (uint16_t)(i << 8);
     }
 }
 
-static crt_scanline_t make_active_line(uint16_t logical)
-{
+static crt_scanline_t make_active_line(uint16_t logical) {
     static crt_timing_profile_t timing;
     memset(&timing, 0, sizeof(timing));
     timing.total_lines = 262;
     timing.active_lines = 240;
     return (crt_scanline_t)
     {
-        .physical_line = (uint16_t)(logical + 20),
-        .logical_line = logical,
-        .type = CRT_LINE_ACTIVE,
-        .field = 0,
-        .frame_number = 0,
-        .subcarrier_phase = 0,
-        .timing = &timing,
+        .
+        physical_line = (uint16_t)(logical + 20),
+        .
+        logical_line = logical,
+        .
+        type = CRT_LINE_ACTIVE,
+        .
+        field = 0,
+        .
+        frame_number = 0,
+        .
+        subcarrier_phase = 0,
+        .
+        timing = &timing,
     };
 }
 
@@ -47,20 +52,18 @@ static crt_scanline_t make_active_line(uint16_t logical)
 
 /* Tile index i contains the constant pixel value `i` repeated over
  * the 8x8 cell. Cheap way to verify which tile feeds each output. */
-static void fill_constant_patterns(uint8_t *pattern, uint16_t count)
-{
+static void fill_constant_patterns(uint8_t *pattern, uint16_t count) {
     for (uint16_t i = 0; i < count; ++i) {
-        memset(&pattern[(size_t)i * 64], (int)i, 64);
+        memset(&pattern[(size_t) i * 64], (int) i, 64);
     }
 }
 
-static void fill_position_pattern(uint8_t *pattern, uint16_t count)
-{
+static void fill_position_pattern(uint8_t *pattern, uint16_t count) {
     for (uint16_t tile = 0; tile < count; ++tile) {
         for (uint16_t y = 0; y < CRT_TILE_PX_H; ++y) {
             for (uint16_t x = 0; x < CRT_TILE_PX_W; ++x) {
-                pattern[(size_t)tile * CRT_TILE_BYTES + (size_t)y * CRT_TILE_PX_W + x] =
-                    (uint8_t)((tile * 64u + y * CRT_TILE_PX_W + x) & 0xFFu);
+                pattern[(size_t) tile * CRT_TILE_BYTES + (size_t) y * CRT_TILE_PX_W + x] =
+                        (uint8_t)((tile * 64u + y * CRT_TILE_PX_W + x) & 0xFFu);
             }
         }
     }
@@ -68,8 +71,7 @@ static void fill_position_pattern(uint8_t *pattern, uint16_t count)
 
 /* ── Tests ────────────────────────────────────────────────────────── */
 
-static void test_init_validation(void)
-{
+static void test_init_validation(void) {
     crt_tile_layer_t t;
     uint8_t pattern[64] = {0};
     uint8_t nt[32 * 30] = {0};
@@ -101,8 +103,7 @@ static void test_init_validation(void)
     printf("  init validation: OK\n");
 }
 
-static void test_set_get_tile_roundtrip(void)
-{
+static void test_set_get_tile_roundtrip(void) {
     crt_tile_layer_t t;
     uint8_t pattern[64 * 4] = {0};
     uint8_t nt[32 * 32] = {0};
@@ -117,8 +118,7 @@ static void test_set_get_tile_roundtrip(void)
     printf("  set/get tile roundtrip: OK\n");
 }
 
-static void test_attr_hflip_one_tile_one_line(void)
-{
+static void test_attr_hflip_one_tile_one_line(void) {
     crt_tile_layer_t t;
     uint8_t pattern[CRT_TILE_BYTES] = {0};
     uint8_t nt[1] = {0};
@@ -136,14 +136,13 @@ static void test_attr_hflip_one_tile_one_line(void)
     printf("  attr hflip one tile one line: OK\n");
 }
 
-static void test_attr_vflip_one_tile(void)
-{
+static void test_attr_vflip_one_tile(void) {
     crt_tile_layer_t t;
     uint8_t pattern[CRT_TILE_BYTES] = {0};
     uint8_t nt[1] = {0};
     uint8_t attrs[1] = {CRT_TILE_ATTR_VFLIP};
     pattern[0] = 1;
-    pattern[(size_t)7 * CRT_TILE_PX_W] = 99;
+    pattern[(size_t) 7 * CRT_TILE_PX_W] = 99;
 
     assert(crt_tile_init(&t, 1, 1, 1, 1, pattern, 1, nt) == 0);
     crt_tile_set_attributes(&t, attrs);
@@ -154,14 +153,13 @@ static void test_attr_vflip_one_tile(void)
     printf("  attr vflip one tile: OK\n");
 }
 
-static void test_attr_both_flip(void)
-{
+static void test_attr_both_flip(void) {
     crt_tile_layer_t t;
     uint8_t pattern[CRT_TILE_BYTES] = {0};
     uint8_t nt[1] = {0};
     uint8_t attrs[1] = {CRT_TILE_ATTR_HFLIP | CRT_TILE_ATTR_VFLIP};
-    pattern[(size_t)7 * CRT_TILE_PX_W] = 1;
-    pattern[(size_t)7 * CRT_TILE_PX_W + 7] = 99;
+    pattern[(size_t) 7 * CRT_TILE_PX_W] = 1;
+    pattern[(size_t) 7 * CRT_TILE_PX_W + 7] = 99;
 
     assert(crt_tile_init(&t, 1, 1, 1, 1, pattern, 1, nt) == 0);
     crt_tile_set_attributes(&t, attrs);
@@ -173,8 +171,7 @@ static void test_attr_both_flip(void)
     printf("  attr both flip: OK\n");
 }
 
-static void test_attr_null_table_matches_baseline(void)
-{
+static void test_attr_null_table_matches_baseline(void) {
     crt_tile_layer_t t;
     uint8_t pattern[CRT_TILE_BYTES * 4];
     uint8_t nt[32 * 32];
@@ -197,8 +194,7 @@ static void test_attr_null_table_matches_baseline(void)
     printf("  attr null table matches baseline: OK\n");
 }
 
-static void test_attr_out_of_range_setter_no_op(void)
-{
+static void test_attr_out_of_range_setter_no_op(void) {
     crt_tile_layer_t t;
     uint8_t pattern[CRT_TILE_BYTES] = {0};
     uint8_t nt[1] = {0};
@@ -224,8 +220,7 @@ static void test_attr_out_of_range_setter_no_op(void)
     printf("  attr out-of-range setter no-op: OK\n");
 }
 
-static void test_scroll_normalization(void)
-{
+static void test_scroll_normalization(void) {
     crt_tile_layer_t t;
     uint8_t pattern[64] = {0};
     uint8_t nt[32 * 32] = {0};
@@ -253,8 +248,7 @@ static void test_scroll_normalization(void)
     printf("  scroll normalization: OK\n");
 }
 
-static void test_fetch_static_nametable(void)
-{
+static void test_fetch_static_nametable(void) {
     crt_tile_layer_t t;
     uint8_t pattern[64 * 4];
     uint8_t nt[32 * 32];
@@ -264,7 +258,7 @@ static void test_fetch_static_nametable(void)
 
     /* Paint nametable columns 0..3 with tile indices 0..3 */
     for (uint16_t c = 0; c < 4; ++c) {
-        crt_tile_set_tile(&t, c, 0, (uint8_t)c);
+        crt_tile_set_tile(&t, c, 0, (uint8_t) c);
     }
     /* Remaining columns stay 0 */
 
@@ -289,8 +283,7 @@ static void test_fetch_static_nametable(void)
     printf("  fetch static nametable: OK\n");
 }
 
-static void test_fetch_with_scroll_x(void)
-{
+static void test_fetch_with_scroll_x(void) {
     crt_tile_layer_t t;
     uint8_t pattern[64 * 4];
     uint8_t nt[32 * 32];
@@ -331,8 +324,7 @@ static void test_fetch_with_scroll_x(void)
     printf("  fetch with scroll_x: OK\n");
 }
 
-static void test_fetch_with_scroll_y_crosses_tile(void)
-{
+static void test_fetch_with_scroll_y_crosses_tile(void) {
     crt_tile_layer_t t;
     uint8_t pattern[64 * 4];
     uint8_t nt[32 * 32];
@@ -366,8 +358,7 @@ static void test_fetch_with_scroll_y_crosses_tile(void)
     printf("  fetch with scroll_y crosses tile: OK\n");
 }
 
-static void test_scroll_wraparound(void)
-{
+static void test_scroll_wraparound(void) {
     crt_tile_layer_t t;
     uint8_t pattern[64 * 4];
     uint8_t nt[32 * 32];
@@ -398,8 +389,7 @@ static void test_scroll_wraparound(void)
     printf("  scroll wraparound: OK\n");
 }
 
-static void test_fast_path_parity_with_fallback(void)
-{
+static void test_fast_path_parity_with_fallback(void) {
     /* Both paths must render identical logical content when scaled
      * to the same DAC width. The fast path fires at width=768 for
      * the 256 logical -> 768 exact 3:1 case; the fallback fires at
@@ -447,8 +437,7 @@ static void test_fast_path_parity_with_fallback(void)
     printf("  fast path + fallback render identical content: OK\n");
 }
 
-static void test_scanline_hook_parity_with_fetch(void)
-{
+static void test_scanline_hook_parity_with_fetch(void) {
     /* For the same layer + palette, the fused hook output (writes
      * active_buf directly) must equal the fetch output fed through
      * palette LUT + I2S word-swap — i.e. what compose would produce
@@ -499,8 +488,7 @@ static void test_scanline_hook_parity_with_fetch(void)
     printf("  scanline hook parity with fetch path: OK\n");
 }
 
-static void test_missing_palette_noop(void)
-{
+static void test_missing_palette_noop(void) {
     crt_tile_layer_t t;
     uint8_t pattern[64] = {0};
     uint8_t nt[32 * 32] = {0};
@@ -538,8 +526,7 @@ static void test_invalid_hook_inputs_noop(void) {
 
 /* ── Main ─────────────────────────────────────────────────────────── */
 
-int main(void)
-{
+int main(void) {
     printf("crt_tile test\n");
     test_init_validation();
     test_set_get_tile_roundtrip();

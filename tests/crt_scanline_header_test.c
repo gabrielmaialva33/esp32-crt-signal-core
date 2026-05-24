@@ -3,8 +3,7 @@
 
 #include "crt_scanline.h"
 
-static void test_scanline_contract_layout(void)
-{
+static void test_scanline_contract_layout(void) {
     crt_scanline_t scanline = {
         .physical_line = 12U,
         .logical_line = CRT_SCANLINE_LOGICAL_LINE_NONE,
@@ -24,36 +23,32 @@ static void test_scanline_contract_layout(void)
     assert(scanline.timing == NULL);
 }
 
-static void frame_hook(uint32_t frame_number, void *user_data)
-{
-    (void)frame_number;
-    (void)user_data;
+static void frame_hook(uint32_t frame_number, void *user_data) {
+    (void) frame_number;
+    (void) user_data;
 }
 
 static void scanline_hook(const crt_scanline_t *scanline,
                           uint16_t *active_buf,
                           uint16_t active_width,
-                          void *user_data)
-{
-    (void)scanline;
-    (void)active_buf;
-    (void)active_width;
-    (void)user_data;
+                          void *user_data) {
+    (void) scanline;
+    (void) active_buf;
+    (void) active_width;
+    (void) user_data;
 }
 
 static void mod_hook(const crt_scanline_t *scanline,
                      uint16_t *line_buf,
                      uint16_t line_width,
-                     void *user_data)
-{
-    (void)scanline;
-    (void)line_buf;
-    (void)line_width;
-    (void)user_data;
+                     void *user_data) {
+    (void) scanline;
+    (void) line_buf;
+    (void) line_width;
+    (void) user_data;
 }
 
-static void test_hook_signatures_compile(void)
-{
+static void test_hook_signatures_compile(void) {
     crt_frame_hook_fn frame = frame_hook;
     crt_scanline_hook_fn render = scanline_hook;
     crt_mod_hook_fn mod = mod_hook;
@@ -63,8 +58,7 @@ static void test_hook_signatures_compile(void)
     assert(mod != NULL);
 }
 
-int main(void)
-{
+int main(void) {
     test_scanline_contract_layout();
     test_hook_signatures_compile();
     return 0;

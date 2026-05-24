@@ -70,9 +70,11 @@ static uint8_t s_checker_layer_idx = CRT_COMPOSE_LAYER_INVALID;
  * still too expensive for the underrun-free hardware smoke path. */
 DRAM_ATTR static uint8_t s_sprite_atlas_data[64 * 16];
 static crt_sprite_atlas_t s_sprite_atlas;
+
 enum {
     APP_DEMO_SPRITE_COUNT = 3,
 };
+
 static uint8_t s_sprite_ids[APP_DEMO_SPRITE_COUNT];
 
 static void demo_sprite_atlas_fill(void)
@@ -145,7 +147,10 @@ IRAM_ATTR static void demo_frame_hook(uint32_t frame, void *user_data)
  * geometric alignment dialed in; a separate code path will re-enable it once
  * the prep-task budget is profiled with stimulus loaded. */
 
-IRAM_ATTR __attribute__((unused)) static void stimulus_frame_hook(uint32_t frame, void *user_data)
+IRAM_ATTR __attribute__((unused))
+
+static void
+stimulus_frame_hook(uint32_t frame, void *user_data)
 {
     (void)user_data;
     crt_stimulus_set_frame(&s_stimulus, frame);

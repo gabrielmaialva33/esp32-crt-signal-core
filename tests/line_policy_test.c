@@ -4,8 +4,7 @@
 #include <stdbool.h>
 #include <string.h>
 
-static void test_sync_width_tracks_line_type(void)
-{
+static void test_sync_width_tracks_line_type(void) {
     crt_timing_profile_t timing = {
         .sync_width = 67,
         .vsync_width = 845,
@@ -16,15 +15,13 @@ static void test_sync_width_tracks_line_type(void)
     assert(crt_line_policy_sync_width(&timing, CRT_TIMING_LINE_TYPE_VSYNC) == 845);
 }
 
-static void test_burst_presence_is_active_video_only(void)
-{
+static void test_burst_presence_is_active_video_only(void) {
     assert(crt_line_policy_has_burst(CRT_TIMING_LINE_TYPE_ACTIVE));
     assert(!crt_line_policy_has_burst(CRT_TIMING_LINE_TYPE_BLANK));
     assert(!crt_line_policy_has_burst(CRT_TIMING_LINE_TYPE_VSYNC));
 }
 
-static void test_apply_ntsc_vsync_as_single_long_sync_run(void)
-{
+static void test_apply_ntsc_vsync_as_single_long_sync_run(void) {
     uint16_t samples[16];
     crt_timing_profile_t timing = {
         .standard = CRT_VIDEO_STANDARD_NTSC,
@@ -42,8 +39,7 @@ static void test_apply_ntsc_vsync_as_single_long_sync_run(void)
     }
 }
 
-static void test_apply_pal_vsync_half_line_sequence(void)
-{
+static void test_apply_pal_vsync_half_line_sequence(void) {
     uint16_t samples[16];
     crt_timing_profile_t timing = {
         .standard = CRT_VIDEO_STANDARD_PAL,
@@ -69,8 +65,7 @@ static void test_apply_pal_vsync_half_line_sequence(void)
     }
 }
 
-int main(void)
-{
+int main(void) {
     test_sync_width_tracks_line_type();
     test_burst_presence_is_active_video_only();
     test_apply_ntsc_vsync_as_single_long_sync_run();

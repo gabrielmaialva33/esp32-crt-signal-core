@@ -1,3 +1,3 @@
 idf_component_register(SRCS "crt_tile.c"
-                       INCLUDE_DIRS "include"
-                       REQUIRES crt_compose crt_core crt_timing)
+        INCLUDE_DIRS "include"
+        REQUIRES crt_compose crt_core crt_timing)

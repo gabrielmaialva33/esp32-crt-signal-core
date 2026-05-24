@@ -23,9 +23,13 @@ typedef struct {
 } crt_core_config_t;
 
 esp_err_t crt_core_init(const crt_core_config_t *config);
+
 esp_err_t crt_core_start(void);
+
 esp_err_t crt_core_stop(void);
+
 esp_err_t crt_core_deinit(void);
+
 esp_err_t crt_core_get_diag_snapshot(crt_diag_snapshot_t *out_snapshot);
 
 #ifdef __cplusplus

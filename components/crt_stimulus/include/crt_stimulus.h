@@ -43,9 +43,13 @@ typedef struct {
 } crt_stimulus_t;
 
 void crt_stimulus_default_config(crt_stimulus_config_t *config);
+
 esp_err_t crt_stimulus_init(crt_stimulus_t *stimulus, const crt_stimulus_config_t *config);
+
 void crt_stimulus_set_pattern(crt_stimulus_t *stimulus, crt_stimulus_pattern_t pattern);
+
 void crt_stimulus_set_frame(crt_stimulus_t *stimulus, uint32_t frame);
+
 void crt_stimulus_advance_frame(crt_stimulus_t *stimulus);
 
 /**

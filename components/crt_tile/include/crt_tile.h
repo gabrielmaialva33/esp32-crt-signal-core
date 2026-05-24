@@ -123,6 +123,7 @@ esp_err_t crt_tile_init(crt_tile_layer_t *t, uint16_t visible_w, uint16_t visibl
 /* ── Mutation ─────────────────────────────────────────────────────── */
 
 void crt_tile_set_tile(crt_tile_layer_t *t, uint16_t col, uint16_t row, uint8_t tile_idx);
+
 uint8_t crt_tile_get_tile(const crt_tile_layer_t *t, uint16_t col, uint16_t row);
 
 /* ── Attribute table (optional, NES/GBC-style per-tile attrs) ─────── */

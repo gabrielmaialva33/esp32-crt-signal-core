@@ -14,11 +14,10 @@ static uint8_t g_sprite_pixels[CRT_SPRITE_CELL_SIZE * CRT_SPRITE_CELL_SIZE];
 static uint8_t g_bank1[256];
 static crt_compose_palette_banks_t g_banks;
 
-static void init_palette(void)
-{
+static void init_palette(void) {
     for (int i = 0; i < 256; ++i) {
         g_palette[i] = (uint16_t)(i << 8);
-        g_bank1[i] = (uint8_t)i;
+        g_bank1[i] = (uint8_t) i;
     }
     g_bank1[0x10] = 0x22;
     g_bank1[0x11] = 0x33;
@@ -26,28 +25,30 @@ static void init_palette(void)
     g_banks.banks[1] = g_bank1;
 }
 
-static crt_scanline_t make_active_line(uint16_t logical)
-{
+static crt_scanline_t make_active_line(uint16_t logical) {
     static crt_timing_profile_t timing;
     memset(&timing, 0, sizeof(timing));
     timing.standard = CRT_VIDEO_STANDARD_NTSC;
     timing.total_lines = 262;
     timing.active_lines = 240;
-    return (crt_scanline_t){
-        .physical_line = (uint16_t)(logical + 20),
-        .logical_line = logical,
-        .type = CRT_LINE_ACTIVE,
-        .timing = &timing,
+    return (crt_scanline_t)
+    {
+        .
+        physical_line = (uint16_t)(logical + 20),
+        .
+        logical_line = logical,
+        .
+        type = CRT_LINE_ACTIVE,
+        .
+        timing = &timing,
     };
 }
 
-static uint8_t attr_bank(uint8_t attr)
-{
+static uint8_t attr_bank(uint8_t attr) {
     return (uint8_t)((attr & CRT_TILE_ATTR_PALETTE_MASK) >> CRT_TILE_ATTR_PALETTE_SHIFT);
 }
 
-static void init_assets(crt_sprite_atlas_t *atlas)
-{
+static void init_assets(crt_sprite_atlas_t *atlas) {
     memset(g_patterns, 0x10, sizeof(g_patterns));
     memset(g_nametable, 0, sizeof(g_nametable));
     memset(g_attrs, 0, sizeof(g_attrs));
@@ -59,28 +60,41 @@ static void init_assets(crt_sprite_atlas_t *atlas)
                                  CRT_SPRITE_CELL_SIZE) == 0);
 }
 
-static crt_ppu_config_t make_config(const crt_sprite_atlas_t *atlas)
-{
-    return (crt_ppu_config_t){
-        .visible_w_tiles = 32,
-        .visible_h_tiles = 30,
-        .pitch_w_tiles = 32,
-        .pitch_h_tiles = 32,
-        .pattern_table = g_patterns,
-        .pattern_count = 1,
-        .nametable = g_nametable,
-        .attributes = g_attrs,
-        .sprite_atlas = atlas,
-        .sprite_transparent_idx = 0,
-        .max_sprites_per_line = 4,
-        .palette = g_palette,
-        .palette_size = 256,
-        .palette_banks = &g_banks,
+static crt_ppu_config_t make_config(const crt_sprite_atlas_t *atlas) {
+    return (crt_ppu_config_t)
+    {
+        .
+        visible_w_tiles = 32,
+        .
+        visible_h_tiles = 30,
+        .
+        pitch_w_tiles = 32,
+        .
+        pitch_h_tiles = 32,
+        .
+        pattern_table = g_patterns,
+        .
+        pattern_count = 1,
+        .
+        nametable = g_nametable,
+        .
+        attributes = g_attrs,
+        .
+        sprite_atlas = atlas,
+        .
+        sprite_transparent_idx = 0,
+        .
+        max_sprites_per_line = 4,
+        .
+        palette = g_palette,
+        .
+        palette_size = 256,
+        .
+        palette_banks = &g_banks,
     };
 }
 
-static void test_init_validation(void)
-{
+static void test_init_validation(void) {
     crt_ppu_t ppu;
     crt_sprite_atlas_t atlas;
     init_palette();
@@ -94,8 +108,7 @@ static void test_init_validation(void)
     printf("  init validation: OK\n");
 }
 
-static void test_nes_attribute_expansion(void)
-{
+static void test_nes_attribute_expansion(void) {
     crt_ppu_t ppu;
     crt_sprite_atlas_t atlas;
     init_palette();
@@ -128,8 +141,7 @@ static void test_nes_attribute_expansion(void)
     printf("  NES attribute table expansion: OK\n");
 }
 
-static void test_tile_attr_sprite_and_hooks(void)
-{
+static void test_tile_attr_sprite_and_hooks(void) {
     crt_ppu_t ppu;
     crt_sprite_atlas_t atlas;
     init_palette();
@@ -186,8 +198,7 @@ static void test_tile_attr_sprite_and_hooks(void)
     printf("  tile attr + sprite facade + hooks: OK\n");
 }
 
-int main(void)
-{
+int main(void) {
     printf("crt_ppu test\n");
     test_init_validation();
     test_nes_attribute_expansion();

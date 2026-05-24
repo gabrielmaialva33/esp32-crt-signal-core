@@ -71,20 +71,27 @@ esp_err_t crt_sprite_layer_init(crt_sprite_layer_t *layer, const crt_sprite_atla
                                 uint8_t transparent_idx);
 
 void crt_sprite_layer_set_max_sprites_per_line(crt_sprite_layer_t *layer, uint8_t max_sprites);
+
 /** Deprecated compatibility no-op. Sprites always render in 256-pixel logical space. */
 void crt_sprite_layer_set_x_scale(crt_sprite_layer_t *layer, uint8_t x_scale);
+
 void crt_sprite_layer_reset_stats(crt_sprite_layer_t *layer);
 
 esp_err_t crt_sprite_add(crt_sprite_layer_t *layer, uint16_t cell_x, uint16_t cell_y,
                          crt_sprite_size_t size, int16_t x, int16_t y, uint8_t *out_sprite_id);
 
 esp_err_t crt_sprite_set_enabled(crt_sprite_layer_t *layer, uint8_t sprite_id, bool enabled);
+
 esp_err_t crt_sprite_set_position(crt_sprite_layer_t *layer, uint8_t sprite_id, int16_t x,
                                   int16_t y);
+
 esp_err_t crt_sprite_move_by(crt_sprite_layer_t *layer, uint8_t sprite_id, int16_t dx, int16_t dy);
+
 esp_err_t crt_sprite_set_atlas_cell(crt_sprite_layer_t *layer, uint8_t sprite_id, uint16_t cell_x,
                                     uint16_t cell_y);
+
 esp_err_t crt_sprite_set_frame(crt_sprite_layer_t *layer, uint8_t sprite_id, uint16_t frame);
+
 esp_err_t crt_sprite_set_size(crt_sprite_layer_t *layer, uint8_t sprite_id, crt_sprite_size_t size);
 
 /**

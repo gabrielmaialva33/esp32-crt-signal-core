@@ -15,19 +15,17 @@
 
 /* ── Enum values ───────────────────────────────────────────────────── */
 
-static void test_line_type_enum(void)
-{
-    assert(CRT_LINE_ACTIVE   == 0);
-    assert(CRT_LINE_BLANK    == 1);
-    assert(CRT_LINE_VSYNC    == 2);
+static void test_line_type_enum(void) {
+    assert(CRT_LINE_ACTIVE == 0);
+    assert(CRT_LINE_BLANK == 1);
+    assert(CRT_LINE_VSYNC == 2);
     assert(CRT_LINE_EQ_PULSE == 3);
     printf("  line_type enum: OK\n");
 }
 
 /* ── Sentinel and masks ────────────────────────────────────────────── */
 
-static void test_constants(void)
-{
+static void test_constants(void) {
     assert(CRT_SCANLINE_LOGICAL_LINE_NONE == 0xFFFF);
     assert(CRT_SCANLINE_SUBCARRIER_PHASE_MASK == 0x000FFFFF);
     assert(CRT_PHASE_Q20_FULL_CYCLE == 0x100000);
@@ -36,8 +34,7 @@ static void test_constants(void)
 
 /* ── Phase arithmetic ──────────────────────────────────────────────── */
 
-static void test_phase_advance(void)
-{
+static void test_phase_advance(void) {
     uint32_t phase = 0;
     uint32_t step = 0x40000; /* 1/4 cycle */
 
@@ -59,8 +56,7 @@ static void test_phase_advance(void)
 
 /* ── Scanline descriptor construction ──────────────────────────────── */
 
-static void test_scanline_struct(void)
-{
+static void test_scanline_struct(void) {
     crt_timing_profile_t ntsc_timing;
     memset(&ntsc_timing, 0, sizeof(ntsc_timing));
     ntsc_timing.total_lines = 262;
@@ -107,36 +103,32 @@ static void test_scanline_struct(void)
 
 /* ── Hook type signature check (compile-time) ──────────────────────── */
 
-static void dummy_frame_hook(uint32_t frame_number, void *user_data)
-{
-    (void)frame_number;
-    (void)user_data;
+static void dummy_frame_hook(uint32_t frame_number, void *user_data) {
+    (void) frame_number;
+    (void) user_data;
 }
 
 static void dummy_scanline_hook(const crt_scanline_t *scanline,
                                 uint16_t *active_buf,
                                 uint16_t active_width,
-                                void *user_data)
-{
-    (void)scanline;
-    (void)active_buf;
-    (void)active_width;
-    (void)user_data;
+                                void *user_data) {
+    (void) scanline;
+    (void) active_buf;
+    (void) active_width;
+    (void) user_data;
 }
 
 static void dummy_mod_hook(const crt_scanline_t *scanline,
                            uint16_t *line_buf,
                            uint16_t line_width,
-                           void *user_data)
-{
-    (void)scanline;
-    (void)line_buf;
-    (void)line_width;
-    (void)user_data;
+                           void *user_data) {
+    (void) scanline;
+    (void) line_buf;
+    (void) line_width;
+    (void) user_data;
 }
 
-static void test_hook_signatures(void)
-{
+static void test_hook_signatures(void) {
     crt_frame_hook_fn fh = dummy_frame_hook;
     crt_scanline_hook_fn sh = dummy_scanline_hook;
     crt_mod_hook_fn mh = dummy_mod_hook;
@@ -150,8 +142,7 @@ static void test_hook_signatures(void)
 
 /* ── Main ──────────────────────────────────────────────────────────── */
 
-int main(void)
-{
+int main(void) {
     printf("crt_scanline ABI test\n");
     test_line_type_enum();
     test_constants();

@@ -34,11 +34,15 @@ typedef struct {
 } crt_demo_pattern_render_context_t;
 
 void crt_demo_pattern_build_color_bars_row(uint8_t *pixels, size_t width);
+
 void crt_demo_pattern_build_grayscale_ramp_row(uint8_t *pixels, size_t width);
+
 bool crt_demo_pattern_is_ramp_region(const crt_demo_pattern_runtime_t *runtime,
                                      uint16_t active_line_index);
+
 void crt_demo_pattern_runtime_init(crt_demo_pattern_runtime_t *runtime,
                                    crt_demo_pattern_mode_t mode, uint16_t active_line_count);
+
 void crt_demo_pattern_render_active_window(const crt_demo_pattern_runtime_t *runtime,
                                            const crt_demo_pattern_render_context_t *ctx,
                                            uint16_t blank_level, uint16_t *samples,

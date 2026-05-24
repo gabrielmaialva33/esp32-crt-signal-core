@@ -4,8 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
-static void test_default_config_and_init(void)
-{
+static void test_default_config_and_init(void) {
     crt_stimulus_config_t config;
     crt_stimulus_default_config(&config);
 
@@ -25,8 +24,7 @@ static void test_default_config_and_init(void)
     printf("  default config/init: OK\n");
 }
 
-static void test_horizontal_and_vertical_ramps(void)
-{
+static void test_horizontal_and_vertical_ramps(void) {
     crt_stimulus_t stimulus;
     crt_stimulus_config_t config;
     crt_stimulus_default_config(&config);
@@ -52,8 +50,7 @@ static void test_horizontal_and_vertical_ramps(void)
     printf("  ramps: OK\n");
 }
 
-static void test_checker_and_impulse(void)
-{
+static void test_checker_and_impulse(void) {
     crt_stimulus_config_t config;
     crt_stimulus_default_config(&config);
     config.height = 8;
@@ -84,8 +81,7 @@ static void test_checker_and_impulse(void)
     printf("  checker/impulse: OK\n");
 }
 
-static void test_prbs_is_deterministic_and_frame_dependent(void)
-{
+static void test_prbs_is_deterministic_and_frame_dependent(void) {
     crt_stimulus_config_t config;
     crt_stimulus_default_config(&config);
     config.pattern = CRT_STIMULUS_PATTERN_PRBS;
@@ -113,8 +109,7 @@ static void test_prbs_is_deterministic_and_frame_dependent(void)
     printf("  PRBS determinism: OK\n");
 }
 
-static void test_frame_markers_encode_frame_bits(void)
-{
+static void test_frame_markers_encode_frame_bits(void) {
     crt_stimulus_config_t config;
     crt_stimulus_default_config(&config);
     config.height = 16;
@@ -139,8 +134,7 @@ static void test_frame_markers_encode_frame_bits(void)
     printf("  frame markers: OK\n");
 }
 
-int main(void)
-{
+int main(void) {
     printf("crt_stimulus test\n");
     test_default_config_and_init();
     test_horizontal_and_vertical_ramps();
