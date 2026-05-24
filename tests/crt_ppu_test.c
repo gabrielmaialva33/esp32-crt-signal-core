@@ -6,7 +6,7 @@
 #include <string.h>
 
 static uint16_t g_palette[256];
-static uint8_t g_patterns[CRT_TILE_BYTES];
+static uint8_t g_patterns[CRT_TILE_BYTES * 2];
 static uint8_t g_nametable[32 * 32];
 static uint8_t g_attrs[32 * 32];
 static uint8_t g_nes_attrs[8 * 8];
@@ -21,6 +21,7 @@ static void init_palette(void) {
     }
     g_bank1[0x10] = 0x22;
     g_bank1[0x11] = 0x33;
+    g_bank1[0x12] = 0x44;
     memset(&g_banks, 0, sizeof(g_banks));
     g_banks.banks[1] = g_bank1;
 }
@@ -50,6 +51,7 @@ static uint8_t attr_bank(uint8_t attr) {
 
 static void init_assets(crt_sprite_atlas_t *atlas) {
     memset(g_patterns, 0x10, sizeof(g_patterns));
+    memset(&g_patterns[CRT_TILE_BYTES], 0x12, CRT_TILE_BYTES);
     memset(g_nametable, 0, sizeof(g_nametable));
     memset(g_attrs, 0, sizeof(g_attrs));
     memset(g_nes_attrs, 0, sizeof(g_nes_attrs));
@@ -74,7 +76,7 @@ static crt_ppu_config_t make_config(const crt_sprite_atlas_t *atlas) {
         .
         pattern_table = g_patterns,
         .
-        pattern_count = 1,
+        pattern_count = 2,
         .
         nametable = g_nametable,
         .
@@ -309,6 +311,75 @@ static void test_compose_stats_reset(void) {
     printf("  compose stats reset: OK\n");
 }
 
+static void test_staged_updates_commit_on_frame_boundary(void) {
+    crt_ppu_t ppu;
+    crt_sprite_atlas_t atlas;
+    init_palette();
+    init_assets(&atlas);
+    crt_ppu_config_t config = make_config(&atlas);
+    assert(crt_ppu_init(&ppu, &config) == 0);
+
+    uint8_t sprite_id = CRT_SPRITE_INVALID_ID;
+    assert(crt_ppu_add_sprite(&ppu, 0, 0, CRT_SPRITE_SIZE_8X8, 2, 0, 0, &sprite_id) == 0);
+
+    assert(crt_ppu_stage_tile(&ppu, 2, 0, 1) == ESP_OK);
+    assert(crt_ppu_stage_attr(&ppu, 2, 0, (uint8_t)(1u << CRT_TILE_ATTR_PALETTE_SHIFT)) ==
+           ESP_OK);
+    assert(crt_ppu_stage_sprite_position(&ppu, sprite_id, 24, 0) == ESP_OK);
+    assert(crt_ppu_stage_sprite_attr(&ppu, sprite_id,
+                                     (uint8_t)(1u << CRT_SPRITE_ATTR_PALETTE_SHIFT)) ==
+           ESP_OK);
+    assert(crt_ppu_get_pending_update_count(&ppu) == 4);
+
+    assert(crt_ppu_get_tile(&ppu, 2, 0) == 0);
+    assert(crt_ppu_get_attr(&ppu, 2, 0) == 0);
+    crt_sprite_t sprite;
+    assert(crt_sprite_get(&ppu.sprites, sprite_id, &sprite) == ESP_OK);
+    assert(sprite.x == 2);
+    assert(crt_sprite_get_attr(&ppu.sprites, sprite_id) == 0);
+
+    crt_scanline_t sc = make_active_line(0);
+    uint16_t pal_buf[CRT_COMPOSITE_RGB332_WIDTH] = {0};
+    crt_ppu_scanline_hook(&sc, pal_buf, CRT_COMPOSITE_RGB332_WIDTH, &ppu);
+    assert(pal_buf[3] == g_palette[0x11]);
+    assert(pal_buf[16] == g_palette[0x10]);
+
+    crt_ppu_frame_hook(7, &ppu);
+    assert(crt_ppu_get_pending_update_count(&ppu) == 0);
+    assert(crt_ppu_get_tile(&ppu, 2, 0) == 1);
+    assert(crt_ppu_get_attr(&ppu, 2, 0) == (uint8_t)(1u << CRT_TILE_ATTR_PALETTE_SHIFT));
+    assert(crt_sprite_get(&ppu.sprites, sprite_id, &sprite) == ESP_OK);
+    assert(sprite.x == 24);
+    assert(crt_sprite_get_attr(&ppu.sprites, sprite_id) ==
+           (uint8_t)(1u << CRT_SPRITE_ATTR_PALETTE_SHIFT));
+
+    memset(pal_buf, 0, sizeof(pal_buf));
+    crt_ppu_scanline_hook(&sc, pal_buf, CRT_COMPOSITE_RGB332_WIDTH, &ppu);
+    assert(pal_buf[2] == g_palette[0x22]);
+    assert(pal_buf[16] == g_palette[0x44]);
+    assert(pal_buf[25] == g_palette[0x33]);
+    printf("  staged updates commit on frame boundary: OK\n");
+}
+
+static void test_pending_update_queue_is_bounded(void) {
+    crt_ppu_t ppu;
+    crt_sprite_atlas_t atlas;
+    init_palette();
+    init_assets(&atlas);
+    crt_ppu_config_t config = make_config(&atlas);
+    assert(crt_ppu_init(&ppu, &config) == 0);
+
+    for (uint8_t i = 0; i < CRT_PPU_MAX_PENDING_UPDATES; ++i) {
+        assert(crt_ppu_stage_tile(&ppu, i, 0, 1) == ESP_OK);
+    }
+    assert(crt_ppu_get_pending_update_count(&ppu) == CRT_PPU_MAX_PENDING_UPDATES);
+    assert(crt_ppu_stage_tile(&ppu, 0, 1, 1) == ESP_ERR_NO_MEM);
+    assert(crt_ppu_get_pending_update_count(&ppu) == CRT_PPU_MAX_PENDING_UPDATES);
+    assert(crt_ppu_commit_frame(&ppu) == ESP_OK);
+    assert(crt_ppu_get_pending_update_count(&ppu) == 0);
+    printf("  pending update queue is bounded: OK\n");
+}
+
 int main(void) {
     printf("crt_ppu test\n");
     test_init_validation();
@@ -318,6 +389,8 @@ int main(void) {
     test_sprite_peak_stats();
     test_sprite_peak_hits_per_line_cap();
     test_compose_stats_reset();
+    test_staged_updates_commit_on_frame_boundary();
+    test_pending_update_queue_is_bounded();
     printf("ALL PASSED\n");
     return 0;
 }

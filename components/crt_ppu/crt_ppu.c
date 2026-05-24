@@ -4,6 +4,25 @@
 
 #include <string.h>
 
+static esp_err_t crt_ppu_enqueue_update(crt_ppu_t *ppu, const crt_ppu_pending_update_t *update)
+{
+    ESP_RETURN_ON_FALSE(ppu != NULL, ESP_ERR_INVALID_ARG, "crt_ppu", "null ppu");
+    ESP_RETURN_ON_FALSE(update != NULL, ESP_ERR_INVALID_ARG, "crt_ppu", "null update");
+    ESP_RETURN_ON_FALSE(ppu->pending_update_count < CRT_PPU_MAX_PENDING_UPDATES, ESP_ERR_NO_MEM,
+                        "crt_ppu", "pending update queue full");
+
+    ppu->pending_updates[ppu->pending_update_count] = *update;
+    ppu->pending_update_count++;
+    return ESP_OK;
+}
+
+static esp_err_t crt_ppu_validate_sprite_id(const crt_ppu_t *ppu, uint8_t sprite_id)
+{
+    ESP_RETURN_ON_FALSE(ppu != NULL, ESP_ERR_INVALID_ARG, "crt_ppu", "null ppu");
+    crt_sprite_t sprite;
+    return crt_sprite_get(&ppu->sprites, sprite_id, &sprite);
+}
+
 esp_err_t crt_ppu_init(crt_ppu_t *ppu, const crt_ppu_config_t *config)
 {
     ESP_RETURN_ON_FALSE(ppu != NULL, ESP_ERR_INVALID_ARG, "crt_ppu", "null ppu");
@@ -84,6 +103,100 @@ void crt_ppu_set_attr(crt_ppu_t *ppu, uint16_t col, uint16_t row, uint8_t attr)
 uint8_t crt_ppu_get_attr(const crt_ppu_t *ppu, uint16_t col, uint16_t row)
 {
     return (ppu != NULL) ? crt_tile_get_attr(&ppu->tile, col, row) : 0;
+}
+
+esp_err_t crt_ppu_stage_tile(crt_ppu_t *ppu, uint16_t col, uint16_t row, uint8_t tile_idx)
+{
+    const crt_ppu_pending_update_t update = {
+        .type = CRT_PPU_PENDING_TILE,
+        .data.cell = {.col = col, .row = row, .value = tile_idx},
+    };
+    return crt_ppu_enqueue_update(ppu, &update);
+}
+
+esp_err_t crt_ppu_stage_attr(crt_ppu_t *ppu, uint16_t col, uint16_t row, uint8_t attr)
+{
+    const crt_ppu_pending_update_t update = {
+        .type = CRT_PPU_PENDING_ATTR,
+        .data.cell = {.col = col, .row = row, .value = attr},
+    };
+    return crt_ppu_enqueue_update(ppu, &update);
+}
+
+esp_err_t crt_ppu_stage_sprite_position(crt_ppu_t *ppu, uint8_t sprite_id, int16_t x, int16_t y)
+{
+    esp_err_t err = crt_ppu_validate_sprite_id(ppu, sprite_id);
+    if (err != ESP_OK) {
+        return err;
+    }
+    const crt_ppu_pending_update_t update = {
+        .type = CRT_PPU_PENDING_SPRITE_POSITION,
+        .data.sprite_position = {.sprite_id = sprite_id, .x = x, .y = y},
+    };
+    return crt_ppu_enqueue_update(ppu, &update);
+}
+
+esp_err_t crt_ppu_stage_sprite_attr(crt_ppu_t *ppu, uint8_t sprite_id, uint8_t attr)
+{
+    esp_err_t err = crt_ppu_validate_sprite_id(ppu, sprite_id);
+    if (err != ESP_OK) {
+        return err;
+    }
+    const crt_ppu_pending_update_t update = {
+        .type = CRT_PPU_PENDING_SPRITE_ATTR,
+        .data.sprite_attr = {.sprite_id = sprite_id, .attr = attr},
+    };
+    return crt_ppu_enqueue_update(ppu, &update);
+}
+
+uint8_t crt_ppu_get_pending_update_count(const crt_ppu_t *ppu)
+{
+    return (ppu != NULL) ? ppu->pending_update_count : 0;
+}
+
+esp_err_t crt_ppu_commit_frame(crt_ppu_t *ppu)
+{
+    ESP_RETURN_ON_FALSE(ppu != NULL, ESP_ERR_INVALID_ARG, "crt_ppu", "null ppu");
+
+    for (uint8_t i = 0; i < ppu->pending_update_count; ++i) {
+        const crt_ppu_pending_update_t *update = &ppu->pending_updates[i];
+        esp_err_t err = ESP_OK;
+        switch (update->type) {
+        case CRT_PPU_PENDING_TILE:
+            crt_tile_set_tile(&ppu->tile, update->data.cell.col, update->data.cell.row,
+                              update->data.cell.value);
+            break;
+        case CRT_PPU_PENDING_ATTR:
+            crt_tile_set_attr(&ppu->tile, update->data.cell.col, update->data.cell.row,
+                              update->data.cell.value);
+            break;
+        case CRT_PPU_PENDING_SPRITE_POSITION:
+            err = crt_sprite_set_position(&ppu->sprites, update->data.sprite_position.sprite_id,
+                                          update->data.sprite_position.x,
+                                          update->data.sprite_position.y);
+            break;
+        case CRT_PPU_PENDING_SPRITE_ATTR:
+            err = crt_sprite_set_attr(&ppu->sprites, update->data.sprite_attr.sprite_id,
+                                      update->data.sprite_attr.attr);
+            break;
+        default:
+            err = ESP_ERR_INVALID_STATE;
+            break;
+        }
+        if (err != ESP_OK) {
+            ppu->pending_update_count = 0;
+            return err;
+        }
+    }
+
+    ppu->pending_update_count = 0;
+    return ESP_OK;
+}
+
+void crt_ppu_frame_hook(uint32_t frame_number, void *user_data)
+{
+    (void)frame_number;
+    (void)crt_ppu_commit_frame((crt_ppu_t *)user_data);
 }
 
 esp_err_t crt_ppu_load_nes_attributes(crt_ppu_t *ppu, uint8_t *dst_attrs, const uint8_t *nes_attrs,
