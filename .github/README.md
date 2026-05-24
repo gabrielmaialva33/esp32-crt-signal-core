@@ -221,17 +221,17 @@ a `max_sprites_per_line` cap with overflow counters, so cost stays bounded and
 
 ## 📐 Timing Reference
 
-| Parameter        |        NTSC-M |      PAL-M |           PAL-B/G |
-|:-----------------|--------------:|-----------:|------------------:|
-| **Line period**  |     63.556 µs |  63.556 µs |         64.000 µs |
-| **H-sync**       |        4.7 µs |     4.7 µs |            4.7 µs |
-| **Front porch**  |        1.5 µs |     1.5 µs |           1.65 µs |
-| **Back porch**   |        4.7 µs |     4.7 µs |            5.7 µs |
-| **Color burst**  | 2.5 µs (9 cycles) | 2.5 µs (9 cycles) | 2.25 µs (10 cycles) |
-| **Active video** |       52.6 µs |    52.6 µs |          51.95 µs |
-| **Burst freq**   |  3.579545 MHz | 3.575611 MHz |    4.43361875 MHz |
-| **Total lines**  | 525 (262.5/field) | 525 (262.5/field) | 625 (312.5/field) |
-| **Field rate**   |      59.94 Hz |  59.94 Hz |          50.00 Hz |
+| Parameter        |        NTSC-M |      PAL-M |      PAL-N |           PAL-B/G |
+|:-----------------|--------------:|-----------:|-----------:|------------------:|
+| **Line period**  |     63.556 µs |  63.556 µs |  64.000 µs |         64.000 µs |
+| **H-sync**       |        4.7 µs |     4.7 µs |     4.7 µs |            4.7 µs |
+| **Front porch**  |        1.5 µs |     1.5 µs |    1.65 µs |           1.65 µs |
+| **Back porch**   |        4.7 µs |     4.7 µs |     5.7 µs |            5.7 µs |
+| **Color burst**  | 2.5 µs (9 cycles) | 2.5 µs (9 cycles) | 2.25 µs (10 cycles) | 2.25 µs (10 cycles) |
+| **Active video** |       52.6 µs |    52.6 µs |   51.95 µs |          51.95 µs |
+| **Burst freq**   |  3.579545 MHz | 3.575611 MHz | 3.582056 MHz |    4.43361875 MHz |
+| **Total lines**  | 525 (262.5/field) | 525 (262.5/field) | 625 (312.5/field) | 625 (312.5/field) |
+| **Field rate**   |      59.94 Hz |  59.94 Hz |  50.00 Hz |          50.00 Hz |
 
 ---
 
@@ -254,7 +254,7 @@ esp32-crt-signal-core/
 │   │   ├── crt_waveform.c
 │   │   └── crt_line_policy.c
 │   ├── crt_hal/                            # I2S0 + DAC driver
-│   ├── crt_timing/                         # NTSC-M/PAL-M/PAL-BG timing profiles
+│   ├── crt_timing/                         # NTSC-M/PAL-M/PAL-N/PAL-BG timing profiles
 │   ├── crt_demo/                           # Test pattern generator
 │   ├── crt_diag/                           # Runtime telemetry
 │   ├── crt_fb/                             # Indexed-8 framebuffer + scanline hook

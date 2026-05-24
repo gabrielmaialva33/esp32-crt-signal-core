@@ -52,6 +52,12 @@ static void test_pal_m_uses_pal_phase_alternation(void)
     assert(memcmp(even_samples, odd_samples, sizeof(even_samples)) != 0);
 }
 
+static void test_pal_n_uses_pal_phase_alternation(void)
+{
+    assert(crt_composite_rgb332_packed(CRT_VIDEO_STANDARD_PAL_N, 0, 0xFC) == 0x47514035U);
+    assert(crt_composite_rgb332_packed(CRT_VIDEO_STANDARD_PAL_N, 1, 0xFC) == 0x40514735U);
+}
+
 static void test_render_full_rgb332_line(void)
 {
     uint8_t row[CRT_COMPOSITE_RGB332_WIDTH] = {0};
@@ -70,6 +76,7 @@ int main(void)
     test_ntsc_yellow_matches_esp_8_bit_table();
     test_pal_yellow_phase_alternates_by_line();
     test_pal_m_uses_pal_phase_alternation();
+    test_pal_n_uses_pal_phase_alternation();
     test_render_full_rgb332_line();
     return 0;
 }

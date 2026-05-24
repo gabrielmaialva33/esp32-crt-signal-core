@@ -39,7 +39,9 @@ void crt_line_policy_apply_sync(const crt_timing_profile_t *timing, uint16_t lin
         return;
     }
 
-    if (line_type == CRT_TIMING_LINE_TYPE_VSYNC && timing->standard == CRT_VIDEO_STANDARD_PAL &&
+    if (line_type == CRT_TIMING_LINE_TYPE_VSYNC &&
+        (timing->standard == CRT_VIDEO_STANDARD_PAL ||
+         timing->standard == CRT_VIDEO_STANDARD_PAL_N) &&
         timing->vsync_short_width > 0 && line_index >= timing->vsync_start_line) {
         uint16_t vsync_line = (uint16_t)(line_index - timing->vsync_start_line);
 

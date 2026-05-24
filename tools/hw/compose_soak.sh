@@ -38,4 +38,5 @@ run_soak() {
 run_soak NTSC
 run_soak PAL
 run_soak PAL_M
+run_soak PAL_N
 printf 'compose_soak: OK port=%s seconds_per_standard=%u\n' "$PORT" "$SOAK_SECONDS"

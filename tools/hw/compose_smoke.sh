@@ -44,7 +44,7 @@ prepare_sdkconfig() {
         "$SDKCONFIG_TMP"
     sed -i -E '/^(# )?CONFIG_CRT_COMPOSE_STRESS_DEMO(=y| is not set)$/d' \
         "$SDKCONFIG_TMP"
-    sed -i -E '/^(# )?CONFIG_CRT_VIDEO_STANDARD_(NTSC|PAL|PAL_M)(=y| is not set)$/d' \
+    sed -i -E '/^(# )?CONFIG_CRT_VIDEO_STANDARD_(NTSC|PAL|PAL_M|PAL_N)(=y| is not set)$/d' \
         "$SDKCONFIG_TMP"
     {
         printf 'CONFIG_CRT_RENDER_MODE_COMPOSE=y\n'
@@ -56,16 +56,25 @@ prepare_sdkconfig() {
                 printf 'CONFIG_CRT_VIDEO_STANDARD_NTSC=y\n'
                 printf '# CONFIG_CRT_VIDEO_STANDARD_PAL is not set\n'
                 printf '# CONFIG_CRT_VIDEO_STANDARD_PAL_M is not set\n'
+                printf '# CONFIG_CRT_VIDEO_STANDARD_PAL_N is not set\n'
                 ;;
             PAL)
                 printf '# CONFIG_CRT_VIDEO_STANDARD_NTSC is not set\n'
                 printf 'CONFIG_CRT_VIDEO_STANDARD_PAL=y\n'
                 printf '# CONFIG_CRT_VIDEO_STANDARD_PAL_M is not set\n'
+                printf '# CONFIG_CRT_VIDEO_STANDARD_PAL_N is not set\n'
                 ;;
             PAL_M)
                 printf '# CONFIG_CRT_VIDEO_STANDARD_NTSC is not set\n'
                 printf '# CONFIG_CRT_VIDEO_STANDARD_PAL is not set\n'
                 printf 'CONFIG_CRT_VIDEO_STANDARD_PAL_M=y\n'
+                printf '# CONFIG_CRT_VIDEO_STANDARD_PAL_N is not set\n'
+                ;;
+            PAL_N)
+                printf '# CONFIG_CRT_VIDEO_STANDARD_NTSC is not set\n'
+                printf '# CONFIG_CRT_VIDEO_STANDARD_PAL is not set\n'
+                printf '# CONFIG_CRT_VIDEO_STANDARD_PAL_M is not set\n'
+                printf 'CONFIG_CRT_VIDEO_STANDARD_PAL_N=y\n'
                 ;;
             *)
                 fail "unsupported VIDEO_STANDARD=${VIDEO_STANDARD}"

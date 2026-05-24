@@ -30,6 +30,15 @@ static const crt_timing_standard_info_t k_standard_info[] = {
         .chroma_phase_alternates = true,
         .system_m_timing = true,
     },
+    {
+        .standard = CRT_VIDEO_STANDARD_PAL_N,
+        .name = "PAL-N",
+        .color_subcarrier_hz = 3582056,
+        .nominal_total_lines = 625,
+        .field_rate_millihz = 50000,
+        .chroma_phase_alternates = true,
+        .system_m_timing = false,
+    },
 };
 
 esp_err_t crt_timing_get_profile(crt_video_standard_t standard, crt_timing_profile_t *out_profile)
@@ -79,6 +88,25 @@ esp_err_t crt_timing_get_profile(crt_video_standard_t standard, crt_timing_profi
         *out_profile = (crt_timing_profile_t){
             .standard = CRT_VIDEO_STANDARD_PAL,
             .sample_rate_hz = 17734476,
+            .total_lines = 312,
+            .active_start_line = 32,
+            .active_lines = 240,
+            .vsync_start_line = 304,
+            .vsync_line_count = 8,
+            .samples_per_line = 1136,
+            .active_offset = 184,
+            .active_width = 768,
+            .sync_width = 80,
+            .vsync_width = 536,
+            .vsync_short_width = 32,
+            .burst_offset = 96,
+            .burst_width = 44,
+        };
+        return ESP_OK;
+    case CRT_VIDEO_STANDARD_PAL_N:
+        *out_profile = (crt_timing_profile_t){
+            .standard = CRT_VIDEO_STANDARD_PAL_N,
+            .sample_rate_hz = 14328225,
             .total_lines = 312,
             .active_start_line = 32,
             .active_lines = 240,

@@ -569,7 +569,8 @@ static const DRAM_ATTR uint32_t k_pal_yuyv[CRT_COMPOSITE_RGB332_WIDTH * 2U] = {
 IRAM_ATTR static const uint32_t *crt_composite_rgb332_table(crt_video_standard_t standard,
                                                             uint16_t line_index)
 {
-    if (standard == CRT_VIDEO_STANDARD_PAL || standard == CRT_VIDEO_STANDARD_PAL_M) {
+    if (standard == CRT_VIDEO_STANDARD_PAL || standard == CRT_VIDEO_STANDARD_PAL_M ||
+        standard == CRT_VIDEO_STANDARD_PAL_N) {
         return ((line_index & 0x1U) == 0U) ? &k_pal_yuyv[CRT_COMPOSITE_RGB332_WIDTH] : k_pal_yuyv;
     }
 

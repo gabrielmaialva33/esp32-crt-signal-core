@@ -100,7 +100,8 @@ static void crt_demo_pattern_render_color_bars(const crt_demo_pattern_runtime_t 
     }
 
     if (ctx->video_standard == CRT_VIDEO_STANDARD_PAL ||
-        ctx->video_standard == CRT_VIDEO_STANDARD_PAL_M) {
+        ctx->video_standard == CRT_VIDEO_STANDARD_PAL_M ||
+        ctx->video_standard == CRT_VIDEO_STANDARD_PAL_N) {
         palette = ((ctx->line_index & 0x1U) == 0U) ? k_demo_pal_bar_patterns_even
                                                    : k_demo_pal_bar_patterns_odd;
     }

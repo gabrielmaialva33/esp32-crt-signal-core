@@ -11,6 +11,7 @@ typedef enum {
     CRT_VIDEO_STANDARD_NTSC = 0,
     CRT_VIDEO_STANDARD_PAL = 1,
     CRT_VIDEO_STANDARD_PAL_M = 2,
+    CRT_VIDEO_STANDARD_PAL_N = 3,
 } crt_video_standard_t;
 
 typedef enum {

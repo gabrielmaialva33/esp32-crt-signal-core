@@ -15,6 +15,9 @@ config CRT_VIDEO_STANDARD_PAL
 config CRT_VIDEO_STANDARD_PAL_M
     bool "PAL-M (Brazil, 525/60)"
 
+config CRT_VIDEO_STANDARD_PAL_N
+    bool "PAL-N (Argentina/Paraguay/Uruguay, 625/50)"
+
 endchoice
 
 config CRT_ENABLE_COLOR

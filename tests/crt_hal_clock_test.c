@@ -41,6 +41,19 @@ static void test_pal_m_apll_coeffs_match_4x_colorburst_rate(void)
     assert(coeffs.sdm2 == 0x04);
 }
 
+static void test_pal_n_apll_coeffs_match_4x_colorburst_rate(void)
+{
+    crt_hal_apll_coeff_t coeffs = {0};
+
+    assert(crt_hal_apll_coeffs_for_sample_rate(14328225, &coeffs));
+    assert(coeffs.sample_rate_hz == 14328225);
+    assert(coeffs.apll_hz == 57312900);
+    assert(coeffs.o_div == 1);
+    assert(coeffs.sdm0 == 0xD1);
+    assert(coeffs.sdm1 == 0x98);
+    assert(coeffs.sdm2 == 0x04);
+}
+
 static void test_unknown_sample_rate_is_rejected(void)
 {
     crt_hal_apll_coeff_t coeffs = {
@@ -62,6 +75,7 @@ int main(void)
     test_ntsc_apll_coeffs_match_esp_8_bit_reference();
     test_pal_apll_coeffs_match_esp_8_bit_reference();
     test_pal_m_apll_coeffs_match_4x_colorburst_rate();
+    test_pal_n_apll_coeffs_match_4x_colorburst_rate();
     test_unknown_sample_rate_is_rejected();
     return 0;
 }

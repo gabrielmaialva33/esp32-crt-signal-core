@@ -66,6 +66,29 @@ static void test_pal_m_profile_uses_system_m_timing_with_pal_chroma_clock(void)
            (uint32_t)profile.samples_per_line);
 }
 
+static void test_pal_n_profile_uses_625_50_timing_with_pal_n_chroma_clock(void)
+{
+    crt_timing_profile_t profile = {0};
+
+    assert(crt_timing_get_profile(CRT_VIDEO_STANDARD_PAL_N, &profile) == ESP_OK);
+    assert(profile.standard == CRT_VIDEO_STANDARD_PAL_N);
+    assert(profile.sample_rate_hz == 14328225);
+    assert(profile.total_lines == 312);
+    assert(profile.active_start_line == 32);
+    assert(profile.active_lines == 240);
+    assert(profile.vsync_start_line == 304);
+    assert(profile.vsync_line_count == 8);
+    assert(profile.samples_per_line == 1136);
+    assert(profile.sync_width == 80);
+    assert(profile.vsync_width == 536);
+    assert(profile.vsync_short_width == 32);
+    assert(profile.burst_offset == 96);
+    assert(profile.burst_width == 44);
+    assert(profile.active_offset == 184);
+    assert((uint32_t)profile.active_offset + (uint32_t)profile.active_width <=
+           (uint32_t)profile.samples_per_line);
+}
+
 static void test_standard_info_names_chroma_and_system_family(void)
 {
     crt_timing_standard_info_t info = {0};
@@ -85,6 +108,14 @@ static void test_standard_info_names_chroma_and_system_family(void)
     assert(info.field_rate_millihz == 59940);
     assert(info.chroma_phase_alternates);
     assert(info.system_m_timing);
+
+    assert(crt_timing_get_standard_info(CRT_VIDEO_STANDARD_PAL_N, &info) == ESP_OK);
+    assert(strcmp(info.name, "PAL-N") == 0);
+    assert(info.color_subcarrier_hz == 3582056);
+    assert(info.nominal_total_lines == 625);
+    assert(info.field_rate_millihz == 50000);
+    assert(info.chroma_phase_alternates);
+    assert(!info.system_m_timing);
 
     assert(crt_timing_get_standard_info(CRT_VIDEO_STANDARD_PAL, &info) == ESP_OK);
     assert(strcmp(info.name, "PAL-B/G") == 0);
@@ -168,6 +199,7 @@ int main(void)
     test_ntsc_profile_matches_legacy_4x_colorburst_timing();
     test_pal_profile_matches_legacy_4x_colorburst_timing();
     test_pal_m_profile_uses_system_m_timing_with_pal_chroma_clock();
+    test_pal_n_profile_uses_625_50_timing_with_pal_n_chroma_clock();
     test_standard_info_names_chroma_and_system_family();
     test_ntsc_vsync_window_is_wide_enough_for_stable_vertical_lock();
     test_active_line_index_is_timing_owned();
