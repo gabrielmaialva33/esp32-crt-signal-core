@@ -4,10 +4,11 @@
 PORT ?= /dev/ttyUSB0
 HW_PORT ?= /dev/ttyACM0
 BAUD ?= 115200
+HW_SOAK_SECONDS ?= 90
 
 # ── Build ────────────────────────────────────────────────────────────
 
-.PHONY: build flash monitor clean menuconfig fullclean hw-compose-smoke hw-compose-stress hw-compose-pal-stress
+.PHONY: build flash monitor clean menuconfig fullclean hw-compose-smoke hw-compose-stress hw-compose-pal-stress hw-compose-soak
 
 build:
 	idf.py build
@@ -40,6 +41,9 @@ hw-compose-pal-stress:  ## Build, flash, and validate PAL worst-case COMPOSE dia
 		MONITOR_SECONDS=55 MIN_WINDOWS=8 \
 		EXPECT_ACTIVE_SPRITES=8 EXPECT_SPRITE_PEAK=8 EXPECT_PPU_PENDING=8 \
 		PORT="$(HW_PORT)" tools/hw/compose_smoke.sh
+
+hw-compose-soak:  ## Long-run NTSC+PAL COMPOSE stress soak on ESP32 hardware
+	@SOAK_SECONDS="$(HW_SOAK_SECONDS)" PORT="$(HW_PORT)" tools/hw/compose_soak.sh
 
 clean:
 	idf.py fullclean
