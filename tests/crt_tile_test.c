@@ -17,11 +17,22 @@
 /* ── Shared palette + scanline helpers ────────────────────────────── */
 
 static uint16_t g_palette[256];
+static uint8_t g_palette_bank_1[256];
+static crt_compose_palette_banks_t g_palette_banks;
 
 static void init_linear_palette(void) {
     for (int i = 0; i < 256; ++i) {
         g_palette[i] = (uint16_t)(i << 8);
     }
+}
+
+static void init_palette_bank_one(uint8_t from, uint8_t to) {
+    memset(&g_palette_banks, 0, sizeof(g_palette_banks));
+    for (int i = 0; i < 256; ++i) {
+        g_palette_bank_1[i] = (uint8_t) i;
+    }
+    g_palette_bank_1[from] = to;
+    g_palette_banks.banks[1] = g_palette_bank_1;
 }
 
 static crt_scanline_t make_active_line(uint16_t logical) {
@@ -488,6 +499,37 @@ static void test_scanline_hook_parity_with_fetch(void) {
     printf("  scanline hook parity with fetch path: OK\n");
 }
 
+static void test_scanline_hook_applies_palette_bank_attrs(void) {
+    crt_tile_layer_t t;
+    uint8_t pattern[64];
+    uint8_t nt[32 * 32];
+    uint8_t attrs[32 * 32];
+    memset(pattern, 0x10, sizeof(pattern));
+    memset(nt, 0, sizeof(nt));
+    memset(attrs, 0, sizeof(attrs));
+    attrs[0] = (uint8_t)(1u << CRT_TILE_ATTR_PALETTE_SHIFT);
+
+    init_linear_palette();
+    init_palette_bank_one(0x10, 0x22);
+    assert(crt_tile_init(&t, 32, 30, 32, 32, pattern, 1, nt) == 0);
+    crt_tile_set_palette(&t, g_palette);
+    crt_tile_set_attributes(&t, attrs);
+    crt_tile_set_palette_banks(&t, &g_palette_banks);
+
+    uint16_t buf[768];
+    memset(buf, 0, sizeof(buf));
+    crt_scanline_t sc = make_active_line(0);
+    crt_tile_scanline_hook(&sc, buf, 768, &t);
+
+    for (int i = 0; i < 24; ++i) {
+        assert(buf[i] == g_palette[0x22]);
+    }
+    for (int i = 24; i < 768; ++i) {
+        assert(buf[i] == g_palette[0x10]);
+    }
+    printf("  scanline hook applies palette bank attrs: OK\n");
+}
+
 static void test_missing_palette_noop(void) {
     crt_tile_layer_t t;
     uint8_t pattern[64] = {0};
@@ -542,6 +584,7 @@ int main(void) {
     test_scroll_wraparound();
     test_fast_path_parity_with_fallback();
     test_scanline_hook_parity_with_fetch();
+    test_scanline_hook_applies_palette_bank_attrs();
     test_missing_palette_noop();
     test_invalid_hook_inputs_noop();
     printf("ALL PASSED\n");

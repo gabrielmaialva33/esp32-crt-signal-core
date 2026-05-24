@@ -456,8 +456,7 @@ IRAM_ATTR void crt_compose_scanline_hook(const crt_scanline_t *scanline, uint16_
 
         if (active_width == CRT_COMPOSITE_RGB332_ACTIVE_WIDTH &&
             logical_width == CRT_COMPOSITE_RGB332_WIDTH &&
-            keyed->fetch_attr == crt_sprite_layer_fetch_with_attrs &&
-            (c->palette_banks == NULL || base->fetch_attr == NULL)) {
+            keyed->fetch_attr == crt_sprite_layer_fetch_with_attrs) {
             base->scanline_override(scanline, active_buf, active_width, base->ctx);
             if (crt_compose_patch_sprite_spans_256(c, keyed, scanline->logical_line, active_buf)) {
                 return;

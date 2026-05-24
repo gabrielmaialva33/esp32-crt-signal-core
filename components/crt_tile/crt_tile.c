@@ -59,6 +59,7 @@ esp_err_t crt_tile_init(crt_tile_layer_t *t, uint16_t visible_w, uint16_t visibl
         .scroll_y_px = 0,
         .palette = NULL,
         .attributes = NULL,
+        .palette_banks = NULL,
     };
     return ESP_OK;
 }
@@ -112,6 +113,14 @@ void crt_tile_set_attributes(crt_tile_layer_t *t, const uint8_t *attributes)
         return;
     }
     t->attributes = attributes;
+}
+
+void crt_tile_set_palette_banks(crt_tile_layer_t *t, const crt_compose_palette_banks_t *banks)
+{
+    if (t == NULL) {
+        return;
+    }
+    t->palette_banks = banks;
 }
 
 void crt_tile_set_attr(crt_tile_layer_t *t, uint16_t col, uint16_t row, uint8_t attr)
@@ -333,6 +342,104 @@ IRAM_ATTR bool crt_tile_layer_fetch_with_attrs(void *ctx, uint16_t logical_line,
 
 /* ── Fused scanline hook ──────────────────────────────────────────── */
 
+IRAM_ATTR static inline uint8_t tile_remap_palette_bank(const crt_compose_palette_banks_t *banks,
+                                                        uint8_t attr, uint8_t idx)
+{
+    if (banks == NULL) {
+        return idx;
+    }
+    const uint8_t bank_idx =
+        (uint8_t)((attr & CRT_COMPOSE_PIXEL_BANK_MASK) >> CRT_COMPOSE_PIXEL_BANK_SHIFT);
+    const uint8_t *bank = banks->banks[bank_idx];
+    return (bank != NULL) ? bank[idx] : idx;
+}
+
+IRAM_ATTR static inline void tile_patch_expanded_palette_sample(uint16_t *active_buf,
+                                                                uint16_t logical_x, uint16_t sample)
+{
+    const uint16_t first = (uint16_t)(logical_x * 3u);
+    active_buf[first ^ 1u] = sample;
+    active_buf[(first + 1u) ^ 1u] = sample;
+    active_buf[(first + 2u) ^ 1u] = sample;
+}
+
+IRAM_ATTR static inline void
+tile_write_expanded_palette_pair(uint16_t *active_buf, uint16_t logical_x, uint16_t l0, uint16_t l1)
+{
+    const uint16_t base = (uint16_t)(logical_x * 3u);
+    active_buf[base] = l0;
+    active_buf[base + 1u] = l0;
+    active_buf[base + 2u] = l1;
+    active_buf[base + 3u] = l0;
+    active_buf[base + 4u] = l1;
+    active_buf[base + 5u] = l1;
+}
+
+IRAM_ATTR static uint16_t tile_visible_row(const crt_tile_layer_t *t, uint16_t y)
+{
+    const uint16_t logical_h_px = (uint16_t)(t->visible_h_tiles * CRT_TILE_PX_H);
+    uint16_t screen_y = (uint16_t)(y + t->scroll_y_px);
+    if (t->pitch_h_mask != 0u && logical_h_px == (uint16_t)(t->pitch_h_tiles * CRT_TILE_PX_H)) {
+        screen_y = (uint16_t)(screen_y & (uint16_t)((t->pitch_h_tiles * CRT_TILE_PX_H) - 1u));
+    } else if (screen_y >= logical_h_px) {
+        screen_y = (uint16_t)(screen_y % logical_h_px);
+    }
+    const uint16_t tile_row_full = (uint16_t)(screen_y >> 3);
+    return (t->pitch_h_mask != 0u) ? (uint16_t)(tile_row_full & t->pitch_h_mask)
+                                   : (uint16_t)(tile_row_full % t->pitch_h_tiles);
+}
+
+IRAM_ATTR static void tile_render_banked_256_to_768(const crt_tile_layer_t *t, uint16_t y,
+                                                    const uint8_t *logical_line,
+                                                    uint16_t *active_buf)
+{
+    const uint16_t tile_row = tile_visible_row(t, y);
+    uint16_t col = (uint16_t)(t->scroll_x_px >> 3);
+    uint16_t fine = (uint16_t)(t->scroll_x_px & 7u);
+    uint16_t remaining = CRT_TILE_STACK_LOGICAL_W;
+    uint16_t x = 0;
+
+    while (remaining > 0u) {
+        const uint16_t wrapped_col = (t->pitch_w_mask != 0u) ? (uint16_t)(col & t->pitch_w_mask)
+                                                             : (uint16_t)(col % t->pitch_w_tiles);
+        const uint8_t attr = (t->attributes != NULL)
+                                 ? t->attributes[(size_t)tile_row * t->pitch_w_tiles + wrapped_col]
+                                 : 0u;
+        const uint8_t bank_idx =
+            (uint8_t)((attr & CRT_COMPOSE_PIXEL_BANK_MASK) >> CRT_COMPOSE_PIXEL_BANK_SHIFT);
+        const uint8_t *bank = t->palette_banks->banks[bank_idx];
+        uint16_t take = (uint16_t)(CRT_TILE_PX_W - fine);
+        if (take > remaining) {
+            take = remaining;
+        }
+        uint16_t i = 0;
+        if ((x & 1u) != 0u && i < take) {
+            const uint8_t raw = logical_line[x];
+            const uint8_t idx = (bank != NULL) ? bank[raw] : raw;
+            tile_patch_expanded_palette_sample(active_buf, x, t->palette[idx]);
+            i++;
+        }
+        for (; (uint16_t)(i + 1u) < take; i = (uint16_t)(i + 2u)) {
+            const uint8_t raw0 = logical_line[(uint16_t)(x + i)];
+            const uint8_t raw1 = logical_line[(uint16_t)(x + i + 1u)];
+            const uint8_t idx0 = (bank != NULL) ? bank[raw0] : raw0;
+            const uint8_t idx1 = (bank != NULL) ? bank[raw1] : raw1;
+            tile_write_expanded_palette_pair(active_buf, (uint16_t)(x + i), t->palette[idx0],
+                                             t->palette[idx1]);
+        }
+        if (i < take) {
+            const uint16_t logical_x = (uint16_t)(x + i);
+            const uint8_t raw = logical_line[logical_x];
+            const uint8_t idx = (bank != NULL) ? bank[raw] : raw;
+            tile_patch_expanded_palette_sample(active_buf, logical_x, t->palette[idx]);
+        }
+        x = (uint16_t)(x + take);
+        remaining = (uint16_t)(remaining - take);
+        fine = 0;
+        col++;
+    }
+}
+
 IRAM_ATTR void crt_tile_scanline_hook(const crt_scanline_t *scanline, uint16_t *active_buf,
                                       uint16_t active_width, void *user_data)
 {
@@ -353,9 +460,11 @@ IRAM_ATTR void crt_tile_scanline_hook(const crt_scanline_t *scanline, uint16_t *
     if (logical_w_px == 0u || logical_w_px > CRT_TILE_STACK_LOGICAL_W) {
         return;
     }
+    const bool use_palette_banks = t->palette_banks != NULL;
     tile_render_logical_line(t, scanline->logical_line, logical_line_buf, NULL);
 
     const uint16_t *pal = t->palette;
+    const crt_compose_palette_banks_t *banks = t->palette_banks;
 
     /* Fast path: 256 logical -> 768 DAC with palette + I2S word-swap
      * fused into a single pass. Each logical pixel expands to 3 samples;
@@ -368,9 +477,15 @@ IRAM_ATTR void crt_tile_scanline_hook(const crt_scanline_t *scanline, uint16_t *
      *
      * 128 logical-pixel-pairs x 6 samples = 768 outputs. */
     if (logical_w_px == 256u && active_width == 768u) {
+        if (use_palette_banks) {
+            tile_render_banked_256_to_768(t, scanline->logical_line, logical_line_buf, active_buf);
+            return;
+        }
         for (uint16_t p = 0; p < 128u; ++p) {
-            uint16_t l0 = pal[logical_line_buf[(uint16_t)(p * 2u)]];
-            uint16_t l1 = pal[logical_line_buf[(uint16_t)(p * 2u + 1u)]];
+            const uint16_t x0 = (uint16_t)(p * 2u);
+            const uint16_t x1 = (uint16_t)(x0 + 1u);
+            uint16_t l0 = pal[logical_line_buf[x0]];
+            uint16_t l1 = pal[logical_line_buf[x1]];
             const uint16_t base = (uint16_t)(p * 6u);
             active_buf[base] = l0;
             active_buf[base + 1] = l0;
@@ -385,20 +500,33 @@ IRAM_ATTR void crt_tile_scanline_hook(const crt_scanline_t *scanline, uint16_t *
     /* Generic fallback: ceiling-step fixed-point + palette + swap.
      * Ceiling step aligns with the fast-path 3:1 replication so both
      * paths produce bit-identical output for matching dimensions. */
+    uint8_t logical_attr_buf[CRT_TILE_STACK_LOGICAL_W];
+    if (use_palette_banks) {
+        tile_render_logical_line(t, scanline->logical_line, logical_line_buf, logical_attr_buf);
+    }
     uint32_t step =
         (((uint32_t)logical_w_px << 16) + (uint32_t)active_width - 1u) / (uint32_t)active_width;
     uint32_t acc = 0;
     const uint16_t even_width = active_width & (uint16_t)~1U;
     uint16_t i = 0;
     for (; i < even_width; i += 2) {
-        uint16_t p0 = pal[logical_line_buf[acc >> 16]];
+        const uint16_t x0 = (uint16_t)(acc >> 16);
+        const uint8_t i0 = tile_remap_palette_bank(
+            banks, use_palette_banks ? logical_attr_buf[x0] : 0u, logical_line_buf[x0]);
+        uint16_t p0 = pal[i0];
         acc += step;
-        uint16_t p1 = pal[logical_line_buf[acc >> 16]];
+        const uint16_t x1 = (uint16_t)(acc >> 16);
+        const uint8_t i1 = tile_remap_palette_bank(
+            banks, use_palette_banks ? logical_attr_buf[x1] : 0u, logical_line_buf[x1]);
+        uint16_t p1 = pal[i1];
         acc += step;
         active_buf[i] = p1;
         active_buf[i + 1] = p0;
     }
     if (i < active_width) {
-        active_buf[i] = pal[logical_line_buf[acc >> 16]];
+        const uint16_t x = (uint16_t)(acc >> 16);
+        const uint8_t idx = tile_remap_palette_bank(
+            banks, use_palette_banks ? logical_attr_buf[x] : 0u, logical_line_buf[x]);
+        active_buf[i] = pal[idx];
     }
 }

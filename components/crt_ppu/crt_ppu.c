@@ -23,6 +23,7 @@ esp_err_t crt_ppu_init(crt_ppu_t *ppu, const crt_ppu_config_t *config)
     }
     crt_tile_set_attributes(&ppu->tile, config->attributes);
     crt_tile_set_palette(&ppu->tile, config->palette);
+    crt_tile_set_palette_banks(&ppu->tile, config->palette_banks);
 
     err =
         crt_sprite_layer_init(&ppu->sprites, config->sprite_atlas, config->sprite_transparent_idx);

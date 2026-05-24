@@ -215,6 +215,15 @@ static bool mock_base_256_fetch(void *ctx, uint16_t logical_line, uint8_t *idx_o
     return true;
 }
 
+static bool mock_base_256_fetch_with_attrs(void *ctx, uint16_t logical_line, uint8_t *idx_out,
+                                           uint8_t *attr_out, uint16_t width) {
+    const bool ok = mock_base_256_fetch(ctx, logical_line, idx_out, width);
+    if (attr_out != NULL) {
+        memset(attr_out, 0, width);
+    }
+    return ok;
+}
+
 static void mock_base_256_override(const crt_scanline_t *scanline, uint16_t *active_buf,
                                    uint16_t active_width, void *user_data) {
     (void) user_data;
@@ -1099,6 +1108,50 @@ static void test_fused_base_plus_sprite_palette_bank_stays_span_path(void) {
     printf("  fused base + sprite palette bank stays span path: OK\n");
 }
 
+static void test_fused_attr_base_plus_sprite_palette_bank_stays_span_path(void) {
+    init_linear_palette();
+    init_palette_bank_one(0x80, 0x22);
+    reset_mock_counters();
+    memset(g_sprite_atlas, 0, sizeof(g_sprite_atlas));
+    g_sprite_atlas[0] = 0x80;
+
+    crt_sprite_atlas_t atlas;
+    crt_sprite_layer_t sprites;
+    assert(crt_sprite_atlas_init(&atlas, g_sprite_atlas, CRT_SPRITE_CELL_SIZE,
+                                 CRT_SPRITE_CELL_SIZE, CRT_SPRITE_CELL_SIZE) == 0);
+    assert(crt_sprite_layer_init(&sprites, &atlas, 0) == 0);
+    uint8_t sprite_id = CRT_SPRITE_INVALID_ID;
+    assert(crt_sprite_add(&sprites, 0, 0, CRT_SPRITE_SIZE_8X8, 6, 1, &sprite_id) == 0);
+    assert(crt_sprite_set_attr(
+               &sprites, sprite_id, (uint8_t)(1u << CRT_SPRITE_ATTR_PALETTE_SHIFT)) == 0);
+
+    crt_compose_t c;
+    crt_compose_init(&c);
+    crt_compose_set_palette(&c, g_palette, 256);
+    crt_compose_set_palette_banks(&c, &g_palette_banks);
+    assert(crt_compose_add_layer_fused_with_attrs(
+               &c, mock_base_256_fetch_with_attrs, mock_base_256_override, NULL) == 0);
+    assert(crt_compose_add_layer_with_attrs(&c, crt_sprite_layer_fetch_with_attrs, &sprites, 0) ==
+           0);
+
+    crt_scanline_t sc = make_active_line(1);
+    uint16_t fast[CRT_COMPOSITE_RGB332_ACTIVE_WIDTH] = {0};
+    crt_compose_scanline_hook(&sc, fast, CRT_COMPOSITE_RGB332_ACTIVE_WIDTH, &c);
+
+    uint8_t expected[CRT_COMPOSITE_RGB332_WIDTH];
+    for (uint16_t x = 0; x < CRT_COMPOSITE_RGB332_WIDTH; ++x) {
+        expected[x] = (uint8_t)(0x40u + ((x + sc.logical_line) & 0x0Fu));
+    }
+    expected[6] = 0x22;
+    uint16_t expected_dac[CRT_COMPOSITE_RGB332_ACTIVE_WIDTH] = {0};
+    render_palette_256_to_768_expected(expected, expected_dac);
+
+    assert(g_mock_base_override_calls == 1);
+    assert(g_mock_base_fetch_calls == 0);
+    assert(memcmp(fast, expected_dac, sizeof(fast)) == 0);
+    printf("  fused attr base + sprite palette bank stays span path: OK\n");
+}
+
 static void test_fused_vs_generic_parity(void) {
     /* Same logical content rendered via the override path and via the
      * generic fetch+palette+swap path must produce identical active_buf. */
@@ -1675,6 +1728,7 @@ int main(void) {
     test_fused_base_plus_sprite_patches_256_span();
     test_fused_base_plus_bg_priority_sprite_stays_span_path();
     test_fused_base_plus_sprite_palette_bank_stays_span_path();
+    test_fused_attr_base_plus_sprite_palette_bank_stays_span_path();
     test_fused_vs_generic_parity();
     test_rgb332_256_tile_base_sprite_overlay();
     test_grayscale_compose_256_expansion_parity();

@@ -1,6 +1,7 @@
 #ifndef CRT_TILE_HEADER_H
 #define CRT_TILE_HEADER_H
 
+#include "crt_compose.h"
 #include "crt_scanline.h"
 
 #include "esp_err.h"
@@ -84,6 +85,11 @@ typedef struct {
      * Layout matches the nametable: attributes[row * pitch_w_tiles + col]
      * is the attribute for the tile at (col, row). */
     const uint8_t *attributes;
+
+    /* Optional palette-bank remap tables used by the fused scanline hook.
+     * Must match the compose palette bank binding for delegated output to
+     * stay bit-exact with the generic compose path. */
+    const crt_compose_palette_banks_t *palette_banks;
 } crt_tile_layer_t;
 
 /* ── Attribute byte layout (per-tile, NES + GBC inspired) ─────────── */
@@ -188,6 +194,8 @@ void crt_tile_scanline_hook(const crt_scanline_t *scanline, uint16_t *active_buf
  *        bit-exact with the generic compose output pass.
  */
 void crt_tile_set_palette(crt_tile_layer_t *t, const uint16_t *palette);
+
+void crt_tile_set_palette_banks(crt_tile_layer_t *t, const crt_compose_palette_banks_t *banks);
 
 #ifdef __cplusplus
 }
