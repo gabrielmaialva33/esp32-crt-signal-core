@@ -1,6 +1,6 @@
 [project]
 name = "esp32-crt-signal-core-tools"
-version = "0.0.1"
+version = "0.001.0"
 description = "Host-side tooling for ESP32 CRT Signal Core (PRC pipeline, asset converters, setup helpers)."
 requires-python = ">=3.10"
 

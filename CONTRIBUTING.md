@@ -70,6 +70,16 @@ Run the relevant checks for the files you touched:
 
 For documentation-only changes, verify that commands, component names, and counts match the current tree.
 
+## Release Versioning
+
+Project releases use `X.YYY.N`:
+
+- `X`: major compatibility epoch.
+- `YYY`: zero-padded feature train, starting at `001`.
+- `N`: patch or respin within that train.
+
+Tags should use the same numeric form with a `v` prefix, for example `v0.001.0`.
+
 ## Pull Requests
 
 Before opening a PR:
