@@ -1,6 +1,7 @@
 #include "crt_compose.h"
 
 #include "crt_composite_palette.h"
+#include "crt_sprite.h"
 
 #include "esp_attr.h"
 #include "esp_check.h"
@@ -288,6 +289,55 @@ IRAM_ATTR static void crt_compose_apply_palette_banks(crt_compose_t *c, uint16_t
     }
 }
 
+IRAM_ATTR static void crt_compose_patch_expanded_palette_sample(uint16_t *active_buf,
+                                                                uint16_t logical_x, uint16_t sample)
+{
+    const uint16_t first = (uint16_t)(logical_x * 3u);
+    for (uint8_t repeat = 0; repeat < 3u; ++repeat) {
+        const uint16_t stream_pos = (uint16_t)(first + repeat);
+        active_buf[stream_pos ^ 1u] = sample;
+    }
+}
+
+IRAM_ATTR static bool crt_compose_patch_sprite_spans_256(crt_compose_t *c,
+                                                         const crt_compose_layer_t *sprite_layer,
+                                                         uint16_t logical_line,
+                                                         uint16_t *active_buf)
+{
+    crt_sprite_layer_t *sprites = (crt_sprite_layer_t *)sprite_layer->ctx;
+    crt_sprite_scanline_span_t spans[CRT_SPRITE_DEFAULT_PERLINE];
+    if (sprites == NULL || sprites->max_sprites_per_line > CRT_SPRITE_DEFAULT_PERLINE) {
+        return false;
+    }
+    const uint8_t span_count = crt_sprite_layer_collect_scanline(
+        sprites, logical_line, CRT_COMPOSITE_RGB332_WIDTH, spans, CRT_SPRITE_DEFAULT_PERLINE);
+    if (span_count == 0) {
+        return true;
+    }
+
+    for (uint8_t si = 0; si < span_count; ++si) {
+        if ((spans[si].attr & CRT_COMPOSE_PIXEL_SPRITE_BG_PRIO) != 0u) {
+            return false;
+        }
+    }
+
+    const uint8_t key = (uint8_t)sprite_layer->transparent_idx;
+    const uint16_t *pal = c->palette;
+    for (uint8_t si = 0; si < span_count; ++si) {
+        const crt_sprite_scanline_span_t *span = &spans[si];
+        const uint8_t *src = span->src;
+        for (uint8_t sx = 0; sx < span->width; ++sx) {
+            const uint8_t sample_idx = *src;
+            if (sample_idx != key) {
+                crt_compose_patch_expanded_palette_sample(active_buf, (uint16_t)(span->dst_x + sx),
+                                                          pal[sample_idx]);
+            }
+            src += span->src_step;
+        }
+    }
+    return true;
+}
+
 IRAM_ATTR static void crt_compose_render_indexed_line(crt_compose_t *c, uint16_t logical_line,
                                                       uint16_t width)
 {
@@ -401,6 +451,15 @@ IRAM_ATTR void crt_compose_scanline_hook(const crt_scanline_t *scanline, uint16_
     if (base_fused_eligible && keyed_count == 1) {
         const crt_compose_layer_t *base = &c->layers[base_idx];
         const crt_compose_layer_t *keyed = &c->layers[keyed_idx];
+
+        if (active_width == CRT_COMPOSITE_RGB332_ACTIVE_WIDTH &&
+            logical_width == CRT_COMPOSITE_RGB332_WIDTH &&
+            keyed->fetch_attr == crt_sprite_layer_fetch_with_attrs) {
+            base->scanline_override(scanline, active_buf, active_width, base->ctx);
+            if (crt_compose_patch_sprite_spans_256(c, keyed, scanline->logical_line, active_buf)) {
+                return;
+            }
+        }
 
         memset(c->attr_scratch, 0, logical_width);
         if (!crt_compose_fetch_layer(keyed, scanline->logical_line, c->scratch, c->attr_scratch,

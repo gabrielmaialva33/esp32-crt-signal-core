@@ -29,6 +29,13 @@ static bool crt_sprite_id_valid(const crt_sprite_layer_t *layer, uint8_t sprite_
     return layer != NULL && sprite_id < layer->sprite_count;
 }
 
+static uint8_t crt_sprite_compose_attr(uint8_t attr)
+{
+    return CRT_COMPOSE_PIXEL_SPRITE_OPAQUE |
+           (((attr & CRT_SPRITE_ATTR_BG_PRIORITY) != 0u) ? CRT_COMPOSE_PIXEL_SPRITE_BG_PRIO : 0u) |
+           (attr & CRT_SPRITE_ATTR_PALETTE_MASK);
+}
+
 esp_err_t crt_sprite_atlas_init(crt_sprite_atlas_t *atlas, const uint8_t *pixels, uint16_t width,
                                 uint16_t height, uint16_t stride)
 {
@@ -287,10 +294,7 @@ IRAM_ATTR bool crt_sprite_layer_fetch_with_attrs(void *ctx, uint16_t logical_lin
         }
 
         const uint8_t attr = sprite->attr;
-        const uint8_t compose_attr =
-            CRT_COMPOSE_PIXEL_SPRITE_OPAQUE |
-            (((attr & CRT_SPRITE_ATTR_BG_PRIORITY) != 0u) ? CRT_COMPOSE_PIXEL_SPRITE_BG_PRIO : 0u) |
-            (attr & CRT_SPRITE_ATTR_PALETTE_MASK);
+        const uint8_t compose_attr = crt_sprite_compose_attr(attr);
         const uint32_t sample_y = ((attr & CRT_SPRITE_ATTR_VFLIP) != 0u)
                                       ? (uint32_t)(sprite_px - 1u - (uint8_t)rel_y)
                                       : (uint32_t)rel_y;
@@ -342,4 +346,91 @@ IRAM_ATTR bool crt_sprite_layer_fetch_with_attrs(void *ctx, uint16_t logical_lin
         layer->overflow_count += layer->last_line_overflow;
     }
     return layer->last_line_rendered > 0;
+}
+
+IRAM_ATTR uint8_t crt_sprite_layer_collect_scanline(crt_sprite_layer_t *layer,
+                                                    uint16_t logical_line, uint16_t width,
+                                                    crt_sprite_scanline_span_t *out_spans,
+                                                    uint8_t span_capacity)
+{
+    if (layer == NULL || out_spans == NULL || width == 0 || span_capacity == 0 ||
+        layer->atlas.pixels == NULL) {
+        return 0;
+    }
+
+    layer->last_line_considered = 0;
+    layer->last_line_rendered = 0;
+    layer->last_line_overflow = 0;
+
+    const uint8_t max_spans =
+        (layer->max_sprites_per_line < span_capacity) ? layer->max_sprites_per_line : span_capacity;
+    uint8_t span_count = 0;
+
+    for (uint8_t i = 0; i < layer->sprite_count; ++i) {
+        const crt_sprite_t *sprite = &layer->sprites[i];
+        if (!sprite->enabled) {
+            continue;
+        }
+
+        const uint8_t sprite_px = crt_sprite_size_px(sprite->size);
+        const int32_t rel_y = (int32_t)logical_line - sprite->y;
+        if (rel_y < 0 || rel_y >= sprite_px) {
+            continue;
+        }
+
+        layer->last_line_considered++;
+
+        const int32_t x0 = sprite->x;
+        const int32_t x1 = (int32_t)sprite->x + sprite_px;
+        if (x1 <= 0 || x0 >= width) {
+            continue;
+        }
+
+        if (span_count >= max_spans) {
+            layer->last_line_overflow++;
+            continue;
+        }
+
+        const uint8_t attr = sprite->attr;
+        const uint32_t sample_y = ((attr & CRT_SPRITE_ATTR_VFLIP) != 0u)
+                                      ? (uint32_t)(sprite_px - 1u - (uint8_t)rel_y)
+                                      : (uint32_t)rel_y;
+        const uint32_t src_y = ((uint32_t)sprite->cell_y * CRT_SPRITE_CELL_SIZE) + sample_y;
+        const uint32_t src_x0 = (uint32_t)sprite->cell_x * CRT_SPRITE_CELL_SIZE;
+        const uint8_t *src = &layer->atlas.pixels[(src_y * layer->atlas.stride) + src_x0];
+
+        const uint16_t dst_x = (x0 < 0) ? 0u : (uint16_t)x0;
+        const uint16_t dst_end = (x1 > width) ? width : (uint16_t)x1;
+        const uint8_t src_start = (uint8_t)(dst_x - x0);
+        const bool hflip = (attr & CRT_SPRITE_ATTR_HFLIP) != 0u;
+        const uint8_t *span_src = hflip ? &src[sprite_px - 1u - src_start] : &src[src_start];
+        const int8_t span_step = hflip ? -1 : 1;
+
+        bool wrote_pixel = false;
+        const uint8_t *sample_src = span_src;
+        for (uint8_t sx = 0; sx < (uint8_t)(dst_end - dst_x); ++sx) {
+            if (*sample_src != layer->transparent_idx) {
+                wrote_pixel = true;
+                break;
+            }
+            sample_src += span_step;
+        }
+        if (!wrote_pixel) {
+            continue;
+        }
+
+        out_spans[span_count++] = (crt_sprite_scanline_span_t){
+            .dst_x = dst_x,
+            .width = (uint8_t)(dst_end - dst_x),
+            .src = span_src,
+            .src_step = span_step,
+            .attr = crt_sprite_compose_attr(attr),
+        };
+        layer->last_line_rendered++;
+    }
+
+    if (layer->last_line_overflow > 0) {
+        layer->overflow_count += layer->last_line_overflow;
+    }
+    return span_count;
 }

@@ -57,7 +57,7 @@ static crt_stimulus_t s_stimulus;
 
 /* Demo scene:
  *   layer 0 fused: tile (horizontal scroll per frame)
- *   layer 1 keyed: crt_sprite_layer with 4 bouncing 16x16 sprites
+ *   layer 1 keyed: crt_sprite_layer with bouncing 16x16 sprites
  * Stays on the 1+1 fast path so the prep budget keeps the 0-underrun
  * invariant the hardware just re-validated. */
 static crt_compose_viewport_layer_t s_viewport_god; /* reserved, disabled */
@@ -65,9 +65,8 @@ static crt_compose_checker_layer_t s_checker;       /* reserved, disabled */
 static crt_compose_rect_layer_t s_hud_rect;         /* reserved, disabled */
 static uint8_t s_checker_layer_idx = CRT_COMPOSE_LAYER_INVALID;
 
-/* Sprite atlas storage is kept wired for facade/API smoke tests, but the
- * default on-device demo leaves OAM empty. Sprite overlay materialization is
- * still too expensive for the underrun-free hardware smoke path. */
+/* Sprite atlas storage for the PPU facade demo. Sprite rows are patched as
+ * spans over the fused tile base, avoiding full-line sprite materialization. */
 DRAM_ATTR static uint8_t s_sprite_atlas_data[64 * 16];
 static crt_sprite_atlas_t s_sprite_atlas;
 
@@ -1042,6 +1041,17 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
         for (size_t i = 0; i < APP_DEMO_SPRITE_COUNT; ++i) {
             s_sprite_ids[i] = CRT_SPRITE_INVALID_ID;
         }
+        static const int16_t k_sprite_x[APP_DEMO_SPRITE_COUNT] = {24, 112, 184};
+        static const int16_t k_sprite_y[APP_DEMO_SPRITE_COUNT] = {32, 96, 152};
+        for (size_t i = 0; i < APP_DEMO_SPRITE_COUNT; ++i) {
+            ppu_err = crt_ppu_add_sprite(&s_ppu, (uint16_t)(i * 2U), 0, CRT_SPRITE_SIZE_16X16,
+                                         k_sprite_x[i], k_sprite_y[i], 0, &s_sprite_ids[i]);
+            if (ppu_err != ESP_OK) {
+                ESP_LOGE(TAG, "crt_ppu_add_sprite[%u] failed: %s", (unsigned)i,
+                         esp_err_to_name(ppu_err));
+                return ppu_err;
+            }
+        }
 
         /* Reserved primitives (kept declared for the next iteration). */
         (void)s_viewport_god;
@@ -1054,8 +1064,8 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
                                    &s_ppu);
         crt_register_frame_hook(demo_frame_hook, NULL);
         ESP_LOGI(TAG, "compose: %s tile %ux%u (h-scroll) + sprite layer (%u active, max/line=%u)",
-                 k_use_rgb332_compose ? "rgb332" : "palette", TILE_VISIBLE_W, TILE_VISIBLE_H, 0U,
-                 (unsigned)CRT_SPRITE_DEFAULT_PERLINE);
+                 k_use_rgb332_compose ? "rgb332" : "palette", TILE_VISIBLE_W, TILE_VISIBLE_H,
+                 (unsigned)APP_DEMO_SPRITE_COUNT, (unsigned)CRT_SPRITE_DEFAULT_PERLINE);
     }
 
     err = crt_core_start();

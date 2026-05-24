@@ -205,6 +205,28 @@ static void reset_mock_counters(void) {
     g_mock_absent_overlay_calls = 0;
 }
 
+static bool mock_base_256_fetch(void *ctx, uint16_t logical_line, uint8_t *idx_out, uint16_t width) {
+    (void) ctx;
+    g_mock_base_fetch_calls++;
+    assert(width == CRT_COMPOSITE_RGB332_WIDTH);
+    for (uint16_t x = 0; x < width; ++x) {
+        idx_out[x] = (uint8_t)(0x40u + ((x + logical_line) & 0x0Fu));
+    }
+    return true;
+}
+
+static void mock_base_256_override(const crt_scanline_t *scanline, uint16_t *active_buf,
+                                   uint16_t active_width, void *user_data) {
+    (void) user_data;
+    g_mock_base_override_calls++;
+    assert(active_width == CRT_COMPOSITE_RGB332_ACTIVE_WIDTH);
+    uint8_t logical[CRT_COMPOSITE_RGB332_WIDTH];
+    for (uint16_t x = 0; x < CRT_COMPOSITE_RGB332_WIDTH; ++x) {
+        logical[x] = (uint8_t)(0x40u + ((x + scanline->logical_line) & 0x0Fu));
+    }
+    render_palette_256_to_768_expected(logical, active_buf);
+}
+
 /* Tracks how many times the fetch was called. */
 typedef struct {
     uint32_t calls;
@@ -952,6 +974,49 @@ static void test_fused_base_plus_present_overlay_materializes(void) {
     printf("  fused base + present overlay materializes: OK\n");
 }
 
+static void test_fused_base_plus_sprite_patches_256_span(void) {
+    init_linear_palette();
+    reset_mock_counters();
+    memset(g_sprite_atlas, 0, sizeof(g_sprite_atlas));
+    g_sprite_atlas[0] = 0x80;
+    g_sprite_atlas[1] = 0x81;
+    g_sprite_atlas[2] = 0;
+    g_sprite_atlas[3] = 0x83;
+
+    crt_sprite_atlas_t atlas;
+    crt_sprite_layer_t sprites;
+    assert(crt_sprite_atlas_init(&atlas, g_sprite_atlas, CRT_SPRITE_CELL_SIZE,
+                                 CRT_SPRITE_CELL_SIZE, CRT_SPRITE_CELL_SIZE) == 0);
+    assert(crt_sprite_layer_init(&sprites, &atlas, 0) == 0);
+    assert(crt_sprite_add(&sprites, 0, 0, CRT_SPRITE_SIZE_8X8, 6, 1, NULL) == 0);
+
+    crt_compose_t c;
+    crt_compose_init(&c);
+    crt_compose_set_palette(&c, g_palette, 256);
+    assert(crt_compose_add_layer_fused(&c, mock_base_256_fetch, mock_base_256_override, NULL) == 0);
+    assert(crt_compose_add_layer_with_attrs(&c, crt_sprite_layer_fetch_with_attrs, &sprites, 0) ==
+           0);
+
+    crt_scanline_t sc = make_active_line(1);
+    uint16_t fast[CRT_COMPOSITE_RGB332_ACTIVE_WIDTH] = {0};
+    crt_compose_scanline_hook(&sc, fast, CRT_COMPOSITE_RGB332_ACTIVE_WIDTH, &c);
+
+    uint8_t expected[CRT_COMPOSITE_RGB332_WIDTH];
+    for (uint16_t x = 0; x < CRT_COMPOSITE_RGB332_WIDTH; ++x) {
+        expected[x] = (uint8_t)(0x40u + ((x + sc.logical_line) & 0x0Fu));
+    }
+    expected[6] = 0x80;
+    expected[7] = 0x81;
+    expected[9] = 0x83;
+    uint16_t expected_dac[CRT_COMPOSITE_RGB332_ACTIVE_WIDTH] = {0};
+    render_palette_256_to_768_expected(expected, expected_dac);
+
+    assert(g_mock_base_override_calls == 1);
+    assert(g_mock_base_fetch_calls == 0);
+    assert(memcmp(fast, expected_dac, sizeof(fast)) == 0);
+    printf("  fused base + sprite patches 256 span: OK\n");
+}
+
 static void test_fused_vs_generic_parity(void) {
     /* Same logical content rendered via the override path and via the
      * generic fetch+palette+swap path must produce identical active_buf. */
@@ -1525,6 +1590,7 @@ int main(void) {
     test_fused_base_solo_delegates();
     test_fused_base_plus_absent_overlay_delegates();
     test_fused_base_plus_present_overlay_materializes();
+    test_fused_base_plus_sprite_patches_256_span();
     test_fused_vs_generic_parity();
     test_rgb332_256_tile_base_sprite_overlay();
     test_grayscale_compose_256_expansion_parity();

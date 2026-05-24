@@ -64,6 +64,14 @@ typedef struct {
     uint8_t last_line_overflow;
 } crt_sprite_layer_t;
 
+typedef struct {
+    uint16_t dst_x;
+    uint8_t width;
+    const uint8_t *src;
+    int8_t src_step;
+    uint8_t attr;
+} crt_sprite_scanline_span_t;
+
 esp_err_t crt_sprite_atlas_init(crt_sprite_atlas_t *atlas, const uint8_t *pixels, uint16_t width,
                                 uint16_t height, uint16_t stride);
 
@@ -120,6 +128,16 @@ bool crt_sprite_layer_fetch(void *ctx, uint16_t logical_line, uint8_t *idx_out, 
  */
 bool crt_sprite_layer_fetch_with_attrs(void *ctx, uint16_t logical_line, uint8_t *idx_out,
                                        uint8_t *attr_out, uint16_t width);
+
+/**
+ * @brief Collect clipped visible sprite spans for one logical scanline.
+ *
+ * This is the low-overhead adapter for fused compose paths: it returns source
+ * row spans without clearing or materializing a full 256-byte sprite line.
+ */
+uint8_t crt_sprite_layer_collect_scanline(crt_sprite_layer_t *layer, uint16_t logical_line,
+                                          uint16_t width, crt_sprite_scanline_span_t *out_spans,
+                                          uint8_t span_capacity);
 
 #ifdef __cplusplus
 }
