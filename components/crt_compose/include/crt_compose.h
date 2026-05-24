@@ -20,9 +20,13 @@ extern "C" {
  * The compositor sits on top of the scanline hook ABI. Each layer is a
  * fetch callback that emits one indexed-8 line into a scratch buffer.
  * Layers are resolved back-to-front; later layers overwrite earlier ones
- * unless the pixel equals the layer's transparency key. A single final
- * pass maps indices through the palette LUT and writes I2S-swapped
- * 16-bit DAC samples into the active region buffer.
+ * unless the pixel equals the layer's transparency key. Attribute-aware
+ * layers may also publish per-column priority flags. Sprite pixels win over
+ * tile BG only when both CRT_COMPOSE_PIXEL_BG_PRIORITY and
+ * CRT_COMPOSE_PIXEL_SPRITE_BG_PRIO are clear; unlike some PPUs, BG index 0 is
+ * still opaque for this priority rule. A single final pass maps indices
+ * through the palette LUT and writes I2S-swapped 16-bit DAC samples into the
+ * active region buffer.
  *
  * Usage:
  *     static crt_compose_t compositor;
@@ -48,6 +52,15 @@ extern "C" {
 /** Sentinel returned by layer-creation helpers when no layer was created. */
 #define CRT_COMPOSE_LAYER_INVALID ((uint8_t)0xFFu)
 
+/** Current composed BG pixel should stay over sprite pixels. */
+#define CRT_COMPOSE_PIXEL_BG_PRIORITY (1u << 0)
+
+/** Candidate sprite pixel requests "behind BG" priority. */
+#define CRT_COMPOSE_PIXEL_SPRITE_BG_PRIO (1u << 1)
+
+/** Candidate pixel came from a sprite layer; used to scope BG priority merges. */
+#define CRT_COMPOSE_PIXEL_SPRITE_OPAQUE (1u << 2)
+
 /**
  * @brief Layer fetch callback.
  *
@@ -71,8 +84,19 @@ extern "C" {
 typedef bool (*crt_layer_fetch_fn)(void *ctx, uint16_t logical_line, uint8_t *idx_out,
                                    uint16_t width);
 
+/**
+ * @brief Attribute-aware layer fetch callback.
+ *
+ * Produces one indexed-8 scanline into @p idx_out and optional per-pixel
+ * compose flags into @p attr_out. @p attr_out may be NULL; callbacks must then
+ * behave like crt_layer_fetch_fn.
+ */
+typedef bool (*crt_layer_fetch_attr_fn)(void *ctx, uint16_t logical_line, uint8_t *idx_out,
+                                        uint8_t *attr_out, uint16_t width);
+
 typedef struct {
     crt_layer_fetch_fn fetch;
+    crt_layer_fetch_attr_fn fetch_attr;
     /**
      * Optional fused scanline hook. When set, and when this layer is the
      * only enabled opaque layer in the stack, compose delegates the whole
@@ -94,6 +118,7 @@ typedef struct {
 
 typedef struct {
     crt_layer_fetch_fn fetch;
+    crt_layer_fetch_attr_fn fetch_attr;
     crt_scanline_hook_fn scanline_override;
     void *ctx;
     uint16_t transparent_idx;
@@ -114,6 +139,8 @@ typedef struct {
     /** Scratch buffers live inside the struct to avoid stack pressure. */
     uint8_t line[CRT_COMPOSE_MAX_WIDTH];
     uint8_t scratch[CRT_COMPOSE_MAX_WIDTH];
+    uint8_t attr_line[CRT_COMPOSE_MAX_WIDTH];
+    uint8_t attr_scratch[CRT_COMPOSE_MAX_WIDTH];
 } crt_compose_t;
 
 /* ── Lifecycle ────────────────────────────────────────────────────── */
@@ -136,6 +163,9 @@ void crt_compose_set_clear_index(crt_compose_t *c, uint8_t idx);
 esp_err_t crt_compose_add_layer(crt_compose_t *c, crt_layer_fetch_fn fetch, void *ctx,
                                 uint16_t transparent_idx);
 
+esp_err_t crt_compose_add_layer_with_attrs(crt_compose_t *c, crt_layer_fetch_attr_fn fetch,
+                                           void *ctx, uint16_t transparent_idx);
+
 /**
  * @brief Append a layer and return its stack index.
  *
@@ -144,6 +174,10 @@ esp_err_t crt_compose_add_layer(crt_compose_t *c, crt_layer_fetch_fn fetch, void
  */
 esp_err_t crt_compose_add_layer_with_id(crt_compose_t *c, crt_layer_fetch_fn fetch, void *ctx,
                                         uint16_t transparent_idx, uint8_t *out_layer_idx);
+
+esp_err_t crt_compose_add_layer_with_attrs_with_id(crt_compose_t *c, crt_layer_fetch_attr_fn fetch,
+                                                   void *ctx, uint16_t transparent_idx,
+                                                   uint8_t *out_layer_idx);
 
 /**
  * @brief Append an opaque layer that also exposes a fused scanline hook.
@@ -158,12 +192,20 @@ esp_err_t crt_compose_add_layer_with_id(crt_compose_t *c, crt_layer_fetch_fn fet
 esp_err_t crt_compose_add_layer_fused(crt_compose_t *c, crt_layer_fetch_fn fetch,
                                       crt_scanline_hook_fn scanline_override, void *ctx);
 
+esp_err_t crt_compose_add_layer_fused_with_attrs(crt_compose_t *c, crt_layer_fetch_attr_fn fetch,
+                                                 crt_scanline_hook_fn scanline_override, void *ctx);
+
 /**
  * @brief Append a fused opaque layer and return its stack index.
  */
 esp_err_t crt_compose_add_layer_fused_with_id(crt_compose_t *c, crt_layer_fetch_fn fetch,
                                               crt_scanline_hook_fn scanline_override, void *ctx,
                                               uint8_t *out_layer_idx);
+
+esp_err_t crt_compose_add_layer_fused_with_attrs_with_id(crt_compose_t *c,
+                                                         crt_layer_fetch_attr_fn fetch,
+                                                         crt_scanline_hook_fn scanline_override,
+                                                         void *ctx, uint8_t *out_layer_idx);
 
 void crt_compose_clear_layers(crt_compose_t *c);
 

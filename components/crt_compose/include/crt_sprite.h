@@ -22,7 +22,7 @@ extern "C" {
 
 #define CRT_SPRITE_ATTR_HFLIP         (1u << 0) /* mirror columns */
 #define CRT_SPRITE_ATTR_VFLIP         (1u << 1) /* mirror rows */
-#define CRT_SPRITE_ATTR_BG_PRIORITY   (1u << 2) /* reserved for compositor priority */
+#define CRT_SPRITE_ATTR_BG_PRIORITY   (1u << 2) /* sprite drawn behind BG */
 #define CRT_SPRITE_ATTR_PALETTE_SHIFT 3
 #define CRT_SPRITE_ATTR_PALETTE_MASK  (0x1Fu << CRT_SPRITE_ATTR_PALETTE_SHIFT)
 
@@ -101,10 +101,15 @@ esp_err_t crt_sprite_get(const crt_sprite_layer_t *layer, uint8_t sprite_id,
 
 /**
  * @brief Fetch one indexed sprite scanline, applying per-sprite H/V flip attributes.
- *
- * BG priority and palette-bank bits are preserved in OAM for later compositor work.
  */
 bool crt_sprite_layer_fetch(void *ctx, uint16_t logical_line, uint8_t *idx_out, uint16_t width);
+
+/**
+ * @brief Attribute-aware compose fetch adapter. Marks opaque sprite pixels and
+ *        CRT_SPRITE_ATTR_BG_PRIORITY requests in attr_out.
+ */
+bool crt_sprite_layer_fetch_with_attrs(void *ctx, uint16_t logical_line, uint8_t *idx_out,
+                                       uint8_t *attr_out, uint16_t width);
 
 #ifdef __cplusplus
 }

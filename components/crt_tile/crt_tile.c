@@ -1,5 +1,7 @@
 #include "crt_tile.h"
 
+#include "crt_compose.h"
+
 #include "esp_attr.h"
 #include "esp_check.h"
 
@@ -140,7 +142,7 @@ uint8_t crt_tile_get_attr(const crt_tile_layer_t *t, uint16_t col, uint16_t row)
  * Caller owns the buffer. This works for both the fast path (direct
  * expansion consumer) and the generic fallback (fixed-point sampler). */
 static IRAM_ATTR void tile_render_logical_line(const crt_tile_layer_t *t, uint16_t y,
-                                               uint8_t *logical_out)
+                                               uint8_t *logical_out, uint8_t *attr_out)
 {
     const uint16_t logical_w_px = (uint16_t)(t->visible_w_tiles * CRT_TILE_PX_W);
     const uint16_t logical_h_px = (uint16_t)(t->visible_h_tiles * CRT_TILE_PX_H);
@@ -168,6 +170,7 @@ static IRAM_ATTR void tile_render_logical_line(const crt_tile_layer_t *t, uint16
     uint16_t scroll_tile_col = (uint16_t)(t->scroll_x_px >> 3);
     uint16_t scroll_fine_x = (uint16_t)(t->scroll_x_px & 7u);
     uint8_t *dst = logical_out;
+    uint8_t *attr_dst = attr_out;
     uint16_t remaining = logical_w_px;
 
     uint16_t col = scroll_tile_col;
@@ -175,6 +178,9 @@ static IRAM_ATTR void tile_render_logical_line(const crt_tile_layer_t *t, uint16
 
     const uint8_t *attributes = t->attributes;
     if (attributes == NULL) {
+        if (attr_out != NULL) {
+            memset(attr_out, 0, logical_w_px);
+        }
         while (remaining > 0u) {
             const uint16_t wrapped_col = (t->pitch_w_mask != 0u)
                                              ? (uint16_t)(col & t->pitch_w_mask)
@@ -191,6 +197,10 @@ static IRAM_ATTR void tile_render_logical_line(const crt_tile_layer_t *t, uint16
             }
             for (uint16_t i = 0; i < take; ++i) {
                 dst[i] = tile_line[fine + i];
+            }
+            if (attr_dst != NULL) {
+                memset(attr_dst, 0, take);
+                attr_dst += take;
             }
             dst += take;
             remaining = (uint16_t)(remaining - take);
@@ -226,6 +236,12 @@ static IRAM_ATTR void tile_render_logical_line(const crt_tile_layer_t *t, uint16
                 dst[i] = tile_line[fine + i];
             }
         }
+        if (attr_dst != NULL) {
+            const uint8_t compose_attr =
+                ((attr & CRT_TILE_ATTR_PRIORITY) != 0u) ? CRT_COMPOSE_PIXEL_BG_PRIORITY : 0u;
+            memset(attr_dst, compose_attr, take);
+            attr_dst += take;
+        }
         dst += take;
         remaining = (uint16_t)(remaining - take);
         fine = 0;
@@ -238,6 +254,12 @@ static IRAM_ATTR void tile_render_logical_line(const crt_tile_layer_t *t, uint16
 IRAM_ATTR bool crt_tile_layer_fetch(void *ctx, uint16_t logical_line, uint8_t *idx_out,
                                     uint16_t width)
 {
+    return crt_tile_layer_fetch_with_attrs(ctx, logical_line, idx_out, NULL, width);
+}
+
+IRAM_ATTR bool crt_tile_layer_fetch_with_attrs(void *ctx, uint16_t logical_line, uint8_t *idx_out,
+                                               uint8_t *attr_out, uint16_t width)
+{
     crt_tile_layer_t *t = (crt_tile_layer_t *)ctx;
     if (t == NULL || idx_out == NULL || width == 0u) {
         return false;
@@ -246,6 +268,9 @@ IRAM_ATTR bool crt_tile_layer_fetch(void *ctx, uint16_t logical_line, uint8_t *i
     const uint16_t visible_h_px = (uint16_t)(t->visible_h_tiles * CRT_TILE_PX_H);
     if (logical_line >= visible_h_px) {
         memset(idx_out, 0, width);
+        if (attr_out != NULL) {
+            memset(attr_out, 0, width);
+        }
         return true;
     }
 
@@ -255,11 +280,16 @@ IRAM_ATTR bool crt_tile_layer_fetch(void *ctx, uint16_t logical_line, uint8_t *i
      * width is 256 pixels for the common 32-tile case. Capped at
      * CRT_TILE_MAX_LOGICAL_W to bound stack usage on exotic configs. */
     uint8_t logical_line_buf[CRT_TILE_STACK_LOGICAL_W];
+    uint8_t logical_attr_buf[CRT_TILE_STACK_LOGICAL_W];
     if (logical_w_px == 0u || logical_w_px > CRT_TILE_STACK_LOGICAL_W) {
         memset(idx_out, 0, width);
+        if (attr_out != NULL) {
+            memset(attr_out, 0, width);
+        }
         return true;
     }
-    tile_render_logical_line(t, logical_line, logical_line_buf);
+    tile_render_logical_line(t, logical_line, logical_line_buf,
+                             (attr_out != NULL) ? logical_attr_buf : NULL);
 
     /* Fast path: exact 3:1 X expansion. 256 logical -> 768 DAC samples.
      * No fixed-point arithmetic in the inner loop. */
@@ -272,6 +302,16 @@ IRAM_ATTR bool crt_tile_layer_fetch(void *ctx, uint16_t logical_line, uint8_t *i
             dst[2] = v;
             dst += 3;
         }
+        if (attr_out != NULL) {
+            uint8_t *attr_dst = attr_out;
+            for (uint16_t i = 0; i < 256u; ++i) {
+                uint8_t v = logical_attr_buf[i];
+                attr_dst[0] = v;
+                attr_dst[1] = v;
+                attr_dst[2] = v;
+                attr_dst += 3;
+            }
+        }
         return true;
     }
 
@@ -281,7 +321,11 @@ IRAM_ATTR bool crt_tile_layer_fetch(void *ctx, uint16_t logical_line, uint8_t *i
     uint32_t step = (((uint32_t)logical_w_px << 16) + (uint32_t)width - 1u) / (uint32_t)width;
     uint32_t acc = 0;
     for (uint16_t x = 0; x < width; ++x) {
-        idx_out[x] = logical_line_buf[acc >> 16];
+        const uint16_t src_x = (uint16_t)(acc >> 16);
+        idx_out[x] = logical_line_buf[src_x];
+        if (attr_out != NULL) {
+            attr_out[x] = logical_attr_buf[src_x];
+        }
         acc += step;
     }
     return true;
@@ -309,7 +353,7 @@ IRAM_ATTR void crt_tile_scanline_hook(const crt_scanline_t *scanline, uint16_t *
     if (logical_w_px == 0u || logical_w_px > CRT_TILE_STACK_LOGICAL_W) {
         return;
     }
-    tile_render_logical_line(t, scanline->logical_line, logical_line_buf);
+    tile_render_logical_line(t, scanline->logical_line, logical_line_buf, NULL);
 
     const uint16_t *pal = t->palette;
 

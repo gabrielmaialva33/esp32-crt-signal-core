@@ -24,6 +24,7 @@ static uint16_t g_palette[256];
 static uint8_t g_sprite_atlas[256 * 32];
 static uint8_t g_tile_patterns[2 * CRT_TILE_BYTES];
 static uint8_t g_tile_nametable[32 * 32];
+static uint8_t g_tile_attrs[32 * 32];
 
 static void init_linear_palette(void)
 {
@@ -1015,6 +1016,152 @@ static void test_rgb332_256_tile_base_sprite_overlay(void)
     printf("  RGB332 256 logical tile + sprite -> 768 samples: OK\n");
 }
 
+static void init_priority_scene(crt_tile_layer_t *tile, crt_sprite_layer_t *sprites,
+                                uint8_t tile_attr, uint8_t sprite_attr, uint8_t sprite_pixel)
+{
+    memset(g_tile_patterns, 0x24, sizeof(g_tile_patterns));
+    memset(g_tile_nametable, 0, sizeof(g_tile_nametable));
+    memset(g_tile_attrs, 0, sizeof(g_tile_attrs));
+    memset(g_sprite_atlas, 0, sizeof(g_sprite_atlas));
+
+    g_tile_attrs[0] = tile_attr;
+    g_sprite_atlas[0] = sprite_pixel;
+
+    assert(crt_tile_init(tile, 32, 30, 32, 32, g_tile_patterns, 1, g_tile_nametable) == 0);
+    crt_tile_set_attributes(tile, g_tile_attrs);
+
+    crt_sprite_atlas_t atlas;
+    assert(crt_sprite_atlas_init(&atlas, g_sprite_atlas, CRT_SPRITE_CELL_SIZE,
+                                 CRT_SPRITE_CELL_SIZE, CRT_SPRITE_CELL_SIZE) == 0);
+    assert(crt_sprite_layer_init(sprites, &atlas, 0) == 0);
+    crt_sprite_layer_set_x_scale(sprites, 1);
+    uint8_t sprite_id = CRT_SPRITE_INVALID_ID;
+    assert(crt_sprite_add(sprites, 0, 0, CRT_SPRITE_SIZE_8X8, 2, 0, &sprite_id) == 0);
+    assert(crt_sprite_set_attr(sprites, sprite_id, sprite_attr) == 0);
+}
+
+static void assert_rgb332_line_matches(const crt_scanline_t *sc, const uint8_t *expected_logical,
+                                       const uint16_t *actual)
+{
+    uint16_t expected[CRT_COMPOSITE_RGB332_ACTIVE_WIDTH] = {0};
+    crt_composite_rgb332_render_256_to_768(CRT_VIDEO_STANDARD_NTSC, sc->physical_line,
+                                           expected_logical, expected);
+    for (uint16_t i = 0; i < CRT_COMPOSITE_RGB332_ACTIVE_WIDTH; ++i) {
+        assert(actual[i] == expected[i]);
+    }
+}
+
+static void run_priority_case(uint8_t tile_attr, uint8_t sprite_attr, uint8_t sprite_pixel,
+                              uint8_t expected_pixel)
+{
+    const uint8_t bg_idx = 0x24;
+    const uint8_t sprite_idx = sprite_pixel;
+    crt_tile_layer_t tile;
+    crt_sprite_layer_t sprites;
+    init_linear_palette();
+    init_priority_scene(&tile, &sprites, tile_attr, sprite_attr, sprite_idx);
+    crt_tile_set_palette(&tile, g_palette);
+
+    crt_compose_t c;
+    crt_compose_init(&c);
+    crt_compose_set_palette(&c, g_palette, 256);
+    assert(crt_compose_add_layer_fused_with_attrs(&c, crt_tile_layer_fetch_with_attrs,
+                                                  crt_tile_scanline_hook, &tile) == 0);
+    assert(crt_compose_add_layer_with_attrs(&c, crt_sprite_layer_fetch_with_attrs, &sprites, 0) ==
+           0);
+
+    uint8_t expected_logical[CRT_COMPOSITE_RGB332_WIDTH];
+    memset(expected_logical, bg_idx, sizeof(expected_logical));
+    expected_logical[2] = expected_pixel;
+
+    crt_scanline_t sc = make_active_line(0);
+    uint16_t rgb[CRT_COMPOSITE_RGB332_ACTIVE_WIDTH] = {0};
+    crt_compose_scanline_hook_rgb332_256(&sc, rgb, CRT_COMPOSITE_RGB332_ACTIVE_WIDTH, &c);
+    assert(c.line[2] == expected_pixel);
+    assert(c.line[1] == bg_idx);
+    assert(c.line[3] == bg_idx);
+    assert_rgb332_line_matches(&sc, expected_logical, rgb);
+
+    uint16_t pal_buf[CRT_COMPOSITE_RGB332_WIDTH] = {0};
+    crt_compose_scanline_hook(&sc, pal_buf, CRT_COMPOSITE_RGB332_WIDTH, &c);
+    assert(pal_buf[2] == g_palette[expected_logical[3]]);
+    assert(pal_buf[3] == g_palette[expected_logical[2]]);
+}
+
+static void test_priority_default_sprite_wins(void)
+{
+    run_priority_case(0, 0, 0xFC, 0xFC);
+    printf("  priority default sprite wins: OK\n");
+}
+
+static void test_priority_tile_attr_over_sprite(void)
+{
+    run_priority_case(CRT_TILE_ATTR_PRIORITY, 0, 0xFC, 0x24);
+    printf("  priority tile attr over sprite: OK\n");
+}
+
+static void test_priority_sprite_bg_priority(void)
+{
+    run_priority_case(0, CRT_SPRITE_ATTR_BG_PRIORITY, 0xFC, 0x24);
+    printf("  priority sprite bg priority: OK\n");
+}
+
+static void test_priority_both_bits_set(void)
+{
+    run_priority_case(CRT_TILE_ATTR_PRIORITY, CRT_SPRITE_ATTR_BG_PRIORITY, 0xFC, 0x24);
+    printf("  priority both bits set: OK\n");
+}
+
+static void test_priority_transparent_sprite_unchanged(void)
+{
+    run_priority_case(CRT_TILE_ATTR_PRIORITY, CRT_SPRITE_ATTR_BG_PRIORITY, 0, 0x24);
+    printf("  priority transparent sprite unchanged: OK\n");
+}
+
+static void test_priority_no_attrs_baseline_unchanged(void)
+{
+    memset(g_tile_patterns, 0x24, sizeof(g_tile_patterns));
+    memset(g_tile_nametable, 0, sizeof(g_tile_nametable));
+    memset(g_sprite_atlas, 0, sizeof(g_sprite_atlas));
+    g_sprite_atlas[0] = 0xFC;
+
+    crt_tile_layer_t old_tile;
+    crt_tile_layer_t new_tile;
+    crt_sprite_layer_t old_sprites;
+    crt_sprite_layer_t new_sprites;
+    assert(crt_tile_init(&old_tile, 32, 30, 32, 32, g_tile_patterns, 1, g_tile_nametable) == 0);
+    assert(crt_tile_init(&new_tile, 32, 30, 32, 32, g_tile_patterns, 1, g_tile_nametable) == 0);
+
+    crt_sprite_atlas_t atlas;
+    assert(crt_sprite_atlas_init(&atlas, g_sprite_atlas, CRT_SPRITE_CELL_SIZE,
+                                 CRT_SPRITE_CELL_SIZE, CRT_SPRITE_CELL_SIZE) == 0);
+    assert(crt_sprite_layer_init(&old_sprites, &atlas, 0) == 0);
+    assert(crt_sprite_layer_init(&new_sprites, &atlas, 0) == 0);
+    assert(crt_sprite_add(&old_sprites, 0, 0, CRT_SPRITE_SIZE_8X8, 2, 0, NULL) == 0);
+    assert(crt_sprite_add(&new_sprites, 0, 0, CRT_SPRITE_SIZE_8X8, 2, 0, NULL) == 0);
+
+    crt_compose_t old_c;
+    crt_compose_t new_c;
+    crt_compose_init(&old_c);
+    crt_compose_init(&new_c);
+    assert(crt_compose_add_layer_fused(&old_c, crt_tile_layer_fetch, crt_tile_scanline_hook,
+                                       &old_tile) == 0);
+    assert(crt_compose_add_layer(&old_c, crt_sprite_layer_fetch, &old_sprites, 0) == 0);
+    assert(crt_compose_add_layer_fused_with_attrs(&new_c, crt_tile_layer_fetch_with_attrs,
+                                                  crt_tile_scanline_hook, &new_tile) == 0);
+    assert(crt_compose_add_layer_with_attrs(&new_c, crt_sprite_layer_fetch_with_attrs,
+                                            &new_sprites, 0) == 0);
+
+    crt_scanline_t sc = make_active_line(0);
+    uint16_t old_rgb[CRT_COMPOSITE_RGB332_ACTIVE_WIDTH] = {0};
+    uint16_t new_rgb[CRT_COMPOSITE_RGB332_ACTIVE_WIDTH] = {0};
+    crt_compose_scanline_hook_rgb332_256(&sc, old_rgb, CRT_COMPOSITE_RGB332_ACTIVE_WIDTH, &old_c);
+    crt_compose_scanline_hook_rgb332_256(&sc, new_rgb, CRT_COMPOSITE_RGB332_ACTIVE_WIDTH, &new_c);
+    assert(memcmp(old_c.line, new_c.line, CRT_COMPOSITE_RGB332_WIDTH) == 0);
+    assert(memcmp(old_rgb, new_rgb, sizeof(old_rgb)) == 0);
+    printf("  priority no attrs baseline unchanged: OK\n");
+}
+
 static void test_swap_layers_changes_priority(void)
 {
     crt_compose_t c;
@@ -1165,6 +1312,12 @@ int main(void)
     test_fused_base_plus_present_overlay_materializes();
     test_fused_vs_generic_parity();
     test_rgb332_256_tile_base_sprite_overlay();
+    test_priority_default_sprite_wins();
+    test_priority_tile_attr_over_sprite();
+    test_priority_sprite_bg_priority();
+    test_priority_both_bits_set();
+    test_priority_transparent_sprite_unchanged();
+    test_priority_no_attrs_baseline_unchanged();
     test_swap_layers_changes_priority();
     test_non_active_line_noop();
     test_missing_palette_noop();

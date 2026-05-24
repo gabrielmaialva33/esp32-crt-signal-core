@@ -166,6 +166,13 @@ void crt_tile_set_scroll(crt_tile_layer_t *t, int x_px, int y_px);
 bool crt_tile_layer_fetch(void *ctx, uint16_t logical_line, uint8_t *idx_out, uint16_t width);
 
 /**
+ * @brief Attribute-aware compose fetch adapter. Emits tile priority into
+ *        attr_out when a tile carries CRT_TILE_ATTR_PRIORITY.
+ */
+bool crt_tile_layer_fetch_with_attrs(void *ctx, uint16_t logical_line, uint8_t *idx_out,
+                                     uint8_t *attr_out, uint16_t width);
+
+/**
  * @brief Fused scanline hook mirroring crt_fb_scanline_hook. Writes
  *        DAC samples directly into active_buf with palette LUT + I2S
  *        word-swap baked in. Register with crt_compose_add_layer_fused

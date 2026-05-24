@@ -225,6 +225,12 @@ esp_err_t crt_sprite_get(const crt_sprite_layer_t *layer, uint8_t sprite_id,
 IRAM_ATTR bool crt_sprite_layer_fetch(void *ctx, uint16_t logical_line, uint8_t *idx_out,
                                       uint16_t width)
 {
+    return crt_sprite_layer_fetch_with_attrs(ctx, logical_line, idx_out, NULL, width);
+}
+
+IRAM_ATTR bool crt_sprite_layer_fetch_with_attrs(void *ctx, uint16_t logical_line, uint8_t *idx_out,
+                                                 uint8_t *attr_out, uint16_t width)
+{
     crt_sprite_layer_t *layer = (crt_sprite_layer_t *)ctx;
     if (layer == NULL || idx_out == NULL || width == 0 || layer->atlas.pixels == NULL) {
         return false;
@@ -254,6 +260,9 @@ IRAM_ATTR bool crt_sprite_layer_fetch(void *ctx, uint16_t logical_line, uint8_t 
     }
 
     memset(idx_out, layer->transparent_idx, width);
+    if (attr_out != NULL) {
+        memset(attr_out, 0, width);
+    }
     layer->last_line_considered = 0;
     layer->last_line_rendered = 0;
     layer->last_line_overflow = 0;
@@ -277,7 +286,9 @@ IRAM_ATTR bool crt_sprite_layer_fetch(void *ctx, uint16_t logical_line, uint8_t 
         }
 
         const uint8_t attr = sprite->attr;
-        /* BG priority (#37) and palette-bank bits (#35) are preserved for compositor work. */
+        const uint8_t compose_attr =
+            CRT_COMPOSE_PIXEL_SPRITE_OPAQUE |
+            (((attr & CRT_SPRITE_ATTR_BG_PRIORITY) != 0u) ? CRT_COMPOSE_PIXEL_SPRITE_BG_PRIO : 0u);
         const uint32_t sample_y = ((attr & CRT_SPRITE_ATTR_VFLIP) != 0u)
                                       ? (uint32_t)(sprite_px - 1u - (uint8_t)rel_y)
                                       : (uint32_t)rel_y;
@@ -299,6 +310,9 @@ IRAM_ATTR bool crt_sprite_layer_fetch(void *ctx, uint16_t logical_line, uint8_t 
                     const int32_t out_x = out_x0 + scale;
                     if (out_x >= 0 && out_x < width) {
                         idx_out[out_x] = sample;
+                        if (attr_out != NULL) {
+                            attr_out[out_x] = compose_attr;
+                        }
                         wrote_pixel = true;
                     }
                 }
@@ -316,6 +330,9 @@ IRAM_ATTR bool crt_sprite_layer_fetch(void *ctx, uint16_t logical_line, uint8_t 
                     const int32_t out_x = out_x0 + scale;
                     if (out_x >= 0 && out_x < width) {
                         idx_out[out_x] = sample;
+                        if (attr_out != NULL) {
+                            attr_out[out_x] = compose_attr;
+                        }
                         wrote_pixel = true;
                     }
                 }

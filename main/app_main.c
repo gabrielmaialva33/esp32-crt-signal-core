@@ -1026,8 +1026,8 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
         crt_compose_set_palette(&s_compose, s_fb.palette, s_fb.palette_size);
 
         /* Layer 0: tile (fused base, animated horizontal scroll). */
-        crt_compose_add_layer_fused(&s_compose, crt_tile_layer_fetch, crt_tile_scanline_hook,
-                                    &s_tile);
+        crt_compose_add_layer_fused_with_attrs(&s_compose, crt_tile_layer_fetch_with_attrs,
+                                               crt_tile_scanline_hook, &s_tile);
 
         /* Layer 1: sprite layer (single keyed layer holding the OAM). The
          * grayscale DAC path writes directly into the 768-sample active line,
@@ -1052,7 +1052,8 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
             }
         }
 
-        crt_compose_add_layer(&s_compose, crt_sprite_layer_fetch, &s_sprite_layer, /* key */ 0);
+        crt_compose_add_layer_with_attrs(&s_compose, crt_sprite_layer_fetch_with_attrs,
+                                         &s_sprite_layer, /* key */ 0);
 
         /* Reserved primitives (kept declared for the next iteration). */
         (void)s_viewport_god;
