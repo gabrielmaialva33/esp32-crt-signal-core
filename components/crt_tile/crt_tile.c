@@ -106,7 +106,7 @@ void crt_tile_set_palette(crt_tile_layer_t *t, const uint16_t *palette)
     t->palette = palette;
 }
 
-void crt_tile_set_attributes(crt_tile_layer_t *t, uint8_t *attributes)
+void crt_tile_set_attributes(crt_tile_layer_t *t, const uint8_t *attributes)
 {
     if (t == NULL) {
         return;
@@ -218,7 +218,6 @@ static IRAM_ATTR void tile_render_logical_line(const crt_tile_layer_t *t, uint16
         if (idx >= pattern_count) {
             idx = 0;
         }
-        /* Priority and palette-bank bits are reserved for follow-up compositor work. */
         const uint16_t sample_y =
             (attr & CRT_TILE_ATTR_VFLIP) != 0u ? (uint16_t)(7u - fine_y) : fine_y;
         const uint8_t *tile_line =
@@ -238,7 +237,8 @@ static IRAM_ATTR void tile_render_logical_line(const crt_tile_layer_t *t, uint16
         }
         if (attr_dst != NULL) {
             const uint8_t compose_attr =
-                ((attr & CRT_TILE_ATTR_PRIORITY) != 0u) ? CRT_COMPOSE_PIXEL_BG_PRIORITY : 0u;
+                (((attr & CRT_TILE_ATTR_PRIORITY) != 0u) ? CRT_COMPOSE_PIXEL_BG_PRIORITY : 0u) |
+                (attr & CRT_TILE_ATTR_PALETTE_MASK);
             memset(attr_dst, compose_attr, take);
             attr_dst += take;
         }

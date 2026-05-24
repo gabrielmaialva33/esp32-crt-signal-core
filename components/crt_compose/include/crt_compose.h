@@ -21,12 +21,13 @@ extern "C" {
  * fetch callback that emits one indexed-8 line into a scratch buffer.
  * Layers are resolved back-to-front; later layers overwrite earlier ones
  * unless the pixel equals the layer's transparency key. Attribute-aware
- * layers may also publish per-column priority flags. Sprite pixels win over
- * tile BG only when both CRT_COMPOSE_PIXEL_BG_PRIORITY and
- * CRT_COMPOSE_PIXEL_SPRITE_BG_PRIO are clear; unlike some PPUs, BG index 0 is
- * still opaque for this priority rule. A single final pass maps indices
- * through the palette LUT and writes I2S-swapped 16-bit DAC samples into the
- * active region buffer.
+ * layers may also publish per-column priority flags and palette-bank indices.
+ * Sprite pixels win over tile BG only when both CRT_COMPOSE_PIXEL_BG_PRIORITY
+ * and CRT_COMPOSE_PIXEL_SPRITE_BG_PRIO are clear; unlike some PPUs, BG index 0
+ * is still opaque for this priority rule. Palette banks optionally remap final
+ * indexed-8 pixels before the single final pass maps indices through the
+ * palette LUT and writes I2S-swapped 16-bit DAC samples into the active region
+ * buffer.
  *
  * Usage:
  *     static crt_compose_t compositor;
@@ -60,6 +61,17 @@ extern "C" {
 
 /** Candidate pixel came from a sprite layer; used to scope BG priority merges. */
 #define CRT_COMPOSE_PIXEL_SPRITE_OPAQUE (1u << 2)
+
+/** Palette-bank selector bits carried from attribute-aware layers. */
+#define CRT_COMPOSE_PIXEL_BANK_SHIFT 3
+#define CRT_COMPOSE_PIXEL_BANK_MASK  (0x0Fu << CRT_COMPOSE_PIXEL_BANK_SHIFT)
+
+#define CRT_COMPOSE_MAX_PALETTE_BANKS 16
+
+typedef struct {
+    /** Each bank maps indexed-8 pattern bytes to final DAC palette indices. */
+    const uint8_t *banks[CRT_COMPOSE_MAX_PALETTE_BANKS];
+} crt_compose_palette_banks_t;
 
 /**
  * @brief Layer fetch callback.
@@ -136,6 +148,9 @@ typedef struct {
     const uint16_t *palette;
     uint16_t palette_size;
 
+    /** Optional indexed-8 palette-bank remap tables; NULL means identity. */
+    const crt_compose_palette_banks_t *palette_banks;
+
     /** Scratch buffers live inside the struct to avoid stack pressure. */
     uint8_t line[CRT_COMPOSE_MAX_WIDTH];
     uint8_t scratch[CRT_COMPOSE_MAX_WIDTH];
@@ -148,6 +163,10 @@ typedef struct {
 esp_err_t crt_compose_init(crt_compose_t *c);
 
 esp_err_t crt_compose_set_palette(crt_compose_t *c, const uint16_t *palette, uint16_t size);
+
+void crt_compose_set_palette_banks(crt_compose_t *c, const crt_compose_palette_banks_t *banks);
+
+const crt_compose_palette_banks_t *crt_compose_get_palette_banks(const crt_compose_t *c);
 
 void crt_compose_set_clear_index(crt_compose_t *c, uint8_t idx);
 

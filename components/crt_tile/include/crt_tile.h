@@ -95,11 +95,10 @@ typedef struct {
 /* Tile draws OVER sprites (BG-on-top semantics). Compositor honours this
  * when sprite layers use CRT_SPRITE_ATTR_BG_PRIORITY (see crt_sprite). */
 #define CRT_TILE_ATTR_PRIORITY (1u << 2)
-/* Palette/bank selector for future multi-palette colour modes (item #5
- * in docs/research/compositor_roadmap.md). Currently reserved — the
- * present 8bpp pattern path ignores this field. */
+/* Palette bank consumed by crt_compose. Bits 3..6 select bank 0..15;
+ * bit 7 remains reserved. A NULL bank table entry means identity. */
 #define CRT_TILE_ATTR_PALETTE_SHIFT 3
-#define CRT_TILE_ATTR_PALETTE_MASK  (0x1Fu << CRT_TILE_ATTR_PALETTE_SHIFT)
+#define CRT_TILE_ATTR_PALETTE_MASK  (0x0Fu << CRT_TILE_ATTR_PALETTE_SHIFT)
 
 /* ── Lifecycle ────────────────────────────────────────────────────── */
 
@@ -136,7 +135,7 @@ uint8_t crt_tile_get_tile(const crt_tile_layer_t *t, uint16_t col, uint16_t row)
  * pointer is stored as const because the layer never writes through it;
  * use crt_tile_set_attr to mutate entries through the layer API.
  */
-void crt_tile_set_attributes(crt_tile_layer_t *t, uint8_t *attributes);
+void crt_tile_set_attributes(crt_tile_layer_t *t, const uint8_t *attributes);
 
 /**
  * @brief Update one attribute byte. No-op if no attribute table is bound

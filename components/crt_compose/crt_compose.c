@@ -13,6 +13,7 @@ esp_err_t crt_compose_init(crt_compose_t *c)
 {
     ESP_RETURN_ON_FALSE(c != NULL, ESP_ERR_INVALID_ARG, "crt_compose", "null state");
     memset(c, 0, sizeof(*c));
+    c->palette_banks = NULL;
     return ESP_OK;
 }
 
@@ -24,6 +25,18 @@ esp_err_t crt_compose_set_palette(crt_compose_t *c, const uint16_t *palette, uin
     c->palette = palette;
     c->palette_size = (palette != NULL) ? size : 0;
     return ESP_OK;
+}
+
+void crt_compose_set_palette_banks(crt_compose_t *c, const crt_compose_palette_banks_t *banks)
+{
+    if (c != NULL) {
+        c->palette_banks = banks;
+    }
+}
+
+const crt_compose_palette_banks_t *crt_compose_get_palette_banks(const crt_compose_t *c)
+{
+    return (c != NULL) ? c->palette_banks : NULL;
 }
 
 void crt_compose_set_clear_index(crt_compose_t *c, uint8_t idx)
@@ -258,6 +271,23 @@ IRAM_ATTR static void crt_compose_merge_keyed_line(crt_compose_t *c, uint16_t wi
     }
 }
 
+IRAM_ATTR static void crt_compose_apply_palette_banks(crt_compose_t *c, uint16_t width)
+{
+    const crt_compose_palette_banks_t *banks = c->palette_banks;
+    if (banks == NULL) {
+        return;
+    }
+
+    for (uint16_t x = 0; x < width; ++x) {
+        const uint8_t bank_idx = (uint8_t)((c->attr_line[x] & CRT_COMPOSE_PIXEL_BANK_MASK) >>
+                                           CRT_COMPOSE_PIXEL_BANK_SHIFT);
+        const uint8_t *bank = banks->banks[bank_idx];
+        if (bank != NULL) {
+            c->line[x] = bank[c->line[x]];
+        }
+    }
+}
+
 IRAM_ATTR static void crt_compose_render_indexed_line(crt_compose_t *c, uint16_t logical_line,
                                                       uint16_t width)
 {
@@ -295,6 +325,8 @@ IRAM_ATTR static void crt_compose_render_indexed_line(crt_compose_t *c, uint16_t
         memset(c->line, c->clear_idx, width);
         memset(c->attr_line, 0, width);
     }
+
+    crt_compose_apply_palette_banks(c, width);
 }
 
 IRAM_ATTR static void crt_compose_render_palette_line(const crt_compose_t *c, uint16_t *active_buf,
@@ -359,8 +391,9 @@ IRAM_ATTR void crt_compose_scanline_hook(const crt_scanline_t *scanline, uint16_
             keyed_count++;
         }
     }
-    const bool base_fused_eligible =
-        (opaque_count == 1) && (c->layers[base_idx].scanline_override != NULL);
+    const bool base_fused_eligible = (opaque_count == 1) &&
+                                     (c->layers[base_idx].scanline_override != NULL) &&
+                                     (c->palette_banks == NULL);
 
     /* Fused hot path for the common PPU-style case: one opaque base with
      * scanline_override + exactly one keyed overlay. Collapses
@@ -472,6 +505,7 @@ IRAM_ATTR void crt_compose_scanline_hook(const crt_scanline_t *scanline, uint16_
         }
     }
 
+    crt_compose_apply_palette_banks(c, logical_width);
     crt_compose_render_palette_line(c, active_buf, active_width, logical_width);
 }
 

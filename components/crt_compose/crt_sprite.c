@@ -289,7 +289,8 @@ IRAM_ATTR bool crt_sprite_layer_fetch_with_attrs(void *ctx, uint16_t logical_lin
         const uint8_t attr = sprite->attr;
         const uint8_t compose_attr =
             CRT_COMPOSE_PIXEL_SPRITE_OPAQUE |
-            (((attr & CRT_SPRITE_ATTR_BG_PRIORITY) != 0u) ? CRT_COMPOSE_PIXEL_SPRITE_BG_PRIO : 0u);
+            (((attr & CRT_SPRITE_ATTR_BG_PRIORITY) != 0u) ? CRT_COMPOSE_PIXEL_SPRITE_BG_PRIO : 0u) |
+            (attr & CRT_SPRITE_ATTR_PALETTE_MASK);
         const uint32_t sample_y = ((attr & CRT_SPRITE_ATTR_VFLIP) != 0u)
                                       ? (uint32_t)(sprite_px - 1u - (uint8_t)rel_y)
                                       : (uint32_t)rel_y;

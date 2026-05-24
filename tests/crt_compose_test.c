@@ -25,12 +25,24 @@ static uint8_t g_sprite_atlas[256 * 32];
 static uint8_t g_tile_patterns[2 * CRT_TILE_BYTES];
 static uint8_t g_tile_nametable[32 * 32];
 static uint8_t g_tile_attrs[32 * 32];
+static uint8_t g_palette_bank_1[256];
+static crt_compose_palette_banks_t g_palette_banks;
 
 static void init_linear_palette(void)
 {
     for (int i = 0; i < 256; ++i) {
         g_palette[i] = (uint16_t)(i << 8);
     }
+}
+
+static void init_palette_bank_one(uint8_t from, uint8_t to)
+{
+    memset(&g_palette_banks, 0, sizeof(g_palette_banks));
+    for (int i = 0; i < 256; ++i) {
+        g_palette_bank_1[i] = (uint8_t)i;
+    }
+    g_palette_bank_1[from] = to;
+    g_palette_banks.banks[1] = g_palette_bank_1;
 }
 
 static void render_palette_256_to_768_expected(const uint8_t *src256, uint16_t *dst768)
@@ -1175,6 +1187,179 @@ static void run_priority_case(uint8_t tile_attr, uint8_t sprite_attr, uint8_t sp
     assert(pal_buf[3] == g_palette[expected_logical[2]]);
 }
 
+static void init_palette_bank_tile_scene(crt_tile_layer_t *tile, uint8_t tile_attr,
+                                         uint8_t tile_pixel)
+{
+    memset(g_tile_patterns, tile_pixel, sizeof(g_tile_patterns));
+    memset(g_tile_nametable, 0, sizeof(g_tile_nametable));
+    memset(g_tile_attrs, 0, sizeof(g_tile_attrs));
+    g_tile_attrs[0] = tile_attr;
+
+    assert(crt_tile_init(tile, 32, 30, 32, 32, g_tile_patterns, 1, g_tile_nametable) == 0);
+    crt_tile_set_attributes(tile, g_tile_attrs);
+    crt_tile_set_palette(tile, g_palette);
+}
+
+static void init_palette_bank_sprite_scene(crt_tile_layer_t *tile, crt_sprite_layer_t *sprites,
+                                           uint8_t sprite_attr, uint8_t sprite_pixel)
+{
+    memset(g_tile_patterns, 0x24, sizeof(g_tile_patterns));
+    memset(g_tile_nametable, 0, sizeof(g_tile_nametable));
+    memset(g_sprite_atlas, 0, sizeof(g_sprite_atlas));
+    g_sprite_atlas[0] = sprite_pixel;
+
+    assert(crt_tile_init(tile, 32, 30, 32, 32, g_tile_patterns, 1, g_tile_nametable) == 0);
+    crt_tile_set_palette(tile, g_palette);
+
+    crt_sprite_atlas_t atlas;
+    assert(crt_sprite_atlas_init(&atlas, g_sprite_atlas, CRT_SPRITE_CELL_SIZE,
+                                 CRT_SPRITE_CELL_SIZE, CRT_SPRITE_CELL_SIZE) == 0);
+    assert(crt_sprite_layer_init(sprites, &atlas, 0) == 0);
+    uint8_t sprite_id = CRT_SPRITE_INVALID_ID;
+    assert(crt_sprite_add(sprites, 0, 0, CRT_SPRITE_SIZE_8X8, 2, 0, &sprite_id) == 0);
+    assert(crt_sprite_set_attr(sprites, sprite_id, sprite_attr) == 0);
+}
+
+static void test_palette_bank_identity_when_unbound(void)
+{
+    init_linear_palette();
+    crt_scanline_t sc = make_active_line(0);
+    const uint8_t bank_attr = (uint8_t)(1u << CRT_TILE_ATTR_PALETTE_SHIFT);
+
+    crt_tile_layer_t base_tile;
+    crt_tile_layer_t bank_tile;
+    init_palette_bank_tile_scene(&base_tile, 0, 0x10);
+    init_palette_bank_tile_scene(&bank_tile, bank_attr, 0x10);
+
+    crt_compose_t base_c;
+    crt_compose_t bank_c;
+    crt_compose_init(&base_c);
+    crt_compose_init(&bank_c);
+    crt_compose_set_palette(&base_c, g_palette, 256);
+    crt_compose_set_palette(&bank_c, g_palette, 256);
+    assert(crt_compose_add_layer_with_attrs(&base_c, crt_tile_layer_fetch_with_attrs, &base_tile,
+                                            CRT_COMPOSE_NO_TRANSPARENCY) == 0);
+    assert(crt_compose_add_layer_with_attrs(&bank_c, crt_tile_layer_fetch_with_attrs, &bank_tile,
+                                            CRT_COMPOSE_NO_TRANSPARENCY) == 0);
+
+    uint16_t base_rgb[CRT_COMPOSITE_RGB332_ACTIVE_WIDTH] = {0};
+    uint16_t bank_rgb[CRT_COMPOSITE_RGB332_ACTIVE_WIDTH] = {0};
+    crt_compose_scanline_hook_rgb332_256(&sc, base_rgb, CRT_COMPOSITE_RGB332_ACTIVE_WIDTH,
+                                         &base_c);
+    crt_compose_scanline_hook_rgb332_256(&sc, bank_rgb, CRT_COMPOSITE_RGB332_ACTIVE_WIDTH,
+                                         &bank_c);
+    assert(memcmp(base_c.line, bank_c.line, CRT_COMPOSITE_RGB332_WIDTH) == 0);
+    assert(memcmp(base_rgb, bank_rgb, sizeof(base_rgb)) == 0);
+
+    uint16_t base_pal[CRT_COMPOSITE_RGB332_WIDTH] = {0};
+    uint16_t bank_pal[CRT_COMPOSITE_RGB332_WIDTH] = {0};
+    crt_compose_scanline_hook(&sc, base_pal, CRT_COMPOSITE_RGB332_WIDTH, &base_c);
+    crt_compose_scanline_hook(&sc, bank_pal, CRT_COMPOSITE_RGB332_WIDTH, &bank_c);
+    assert(memcmp(base_pal, bank_pal, sizeof(base_pal)) == 0);
+    printf("  palette bank identity when unbound: OK\n");
+}
+
+static void test_palette_bank_remap_tile(void)
+{
+    init_linear_palette();
+    init_palette_bank_one(0x10, 0x22);
+
+    crt_tile_layer_t tile;
+    init_palette_bank_tile_scene(&tile, (uint8_t)(1u << CRT_TILE_ATTR_PALETTE_SHIFT), 0x10);
+
+    crt_compose_t c;
+    crt_compose_init(&c);
+    crt_compose_set_palette(&c, g_palette, 256);
+    crt_compose_set_palette_banks(&c, &g_palette_banks);
+    assert(crt_compose_add_layer_fused_with_attrs(&c, crt_tile_layer_fetch_with_attrs,
+                                                  crt_tile_scanline_hook, &tile) == 0);
+
+    crt_scanline_t sc = make_active_line(0);
+    uint16_t rgb[CRT_COMPOSITE_RGB332_ACTIVE_WIDTH] = {0};
+    uint8_t expected_logical[CRT_COMPOSITE_RGB332_WIDTH];
+    memset(expected_logical, 0x10, sizeof(expected_logical));
+    for (uint16_t x = 0; x < CRT_TILE_PX_W; ++x) {
+        expected_logical[x] = 0x22;
+    }
+
+    crt_compose_scanline_hook_rgb332_256(&sc, rgb, CRT_COMPOSITE_RGB332_ACTIVE_WIDTH, &c);
+    assert(c.line[0] == 0x22);
+    assert(c.line[CRT_TILE_PX_W] == 0x10);
+    assert_rgb332_line_matches(&sc, expected_logical, rgb);
+
+    uint16_t pal_buf[CRT_COMPOSITE_RGB332_WIDTH] = {0};
+    crt_compose_scanline_hook(&sc, pal_buf, CRT_COMPOSITE_RGB332_WIDTH, &c);
+    assert(c.line[0] == 0x22);
+    assert(pal_buf[0] == g_palette[0x22]);
+    assert(pal_buf[1] == g_palette[0x22]);
+    printf("  palette bank remaps tile pixels: OK\n");
+}
+
+static void test_palette_bank_remap_sprite(void)
+{
+    init_linear_palette();
+    init_palette_bank_one(0x10, 0x22);
+
+    crt_tile_layer_t tile;
+    crt_sprite_layer_t sprites;
+    init_palette_bank_sprite_scene(&tile, &sprites,
+                                   (uint8_t)(1u << CRT_SPRITE_ATTR_PALETTE_SHIFT), 0x10);
+
+    crt_compose_t c;
+    crt_compose_init(&c);
+    crt_compose_set_palette(&c, g_palette, 256);
+    crt_compose_set_palette_banks(&c, &g_palette_banks);
+    assert(crt_compose_add_layer_fused_with_attrs(&c, crt_tile_layer_fetch_with_attrs,
+                                                  crt_tile_scanline_hook, &tile) == 0);
+    assert(crt_compose_add_layer_with_attrs(&c, crt_sprite_layer_fetch_with_attrs, &sprites, 0) ==
+           0);
+
+    crt_scanline_t sc = make_active_line(0);
+    uint16_t rgb[CRT_COMPOSITE_RGB332_ACTIVE_WIDTH] = {0};
+    uint8_t expected_logical[CRT_COMPOSITE_RGB332_WIDTH];
+    memset(expected_logical, 0x24, sizeof(expected_logical));
+    expected_logical[2] = 0x22;
+
+    crt_compose_scanline_hook_rgb332_256(&sc, rgb, CRT_COMPOSITE_RGB332_ACTIVE_WIDTH, &c);
+    assert(c.line[2] == 0x22);
+    assert_rgb332_line_matches(&sc, expected_logical, rgb);
+
+    uint16_t pal_buf[CRT_COMPOSITE_RGB332_WIDTH] = {0};
+    crt_compose_scanline_hook(&sc, pal_buf, CRT_COMPOSITE_RGB332_WIDTH, &c);
+    assert(c.line[2] == 0x22);
+    assert(pal_buf[2] == g_palette[0x24]);
+    assert(pal_buf[3] == g_palette[0x22]);
+    printf("  palette bank remaps sprite pixels: OK\n");
+}
+
+static void test_palette_bank_out_of_range_is_identity(void)
+{
+    init_linear_palette();
+    memset(&g_palette_banks, 0, sizeof(g_palette_banks));
+
+    crt_tile_layer_t tile;
+    init_palette_bank_tile_scene(&tile, (uint8_t)(15u << CRT_TILE_ATTR_PALETTE_SHIFT), 0x10);
+
+    crt_compose_t c;
+    crt_compose_init(&c);
+    crt_compose_set_palette(&c, g_palette, 256);
+    crt_compose_set_palette_banks(&c, &g_palette_banks);
+    assert(crt_compose_add_layer_with_attrs(&c, crt_tile_layer_fetch_with_attrs, &tile,
+                                            CRT_COMPOSE_NO_TRANSPARENCY) == 0);
+
+    crt_scanline_t sc = make_active_line(0);
+    uint16_t rgb[CRT_COMPOSITE_RGB332_ACTIVE_WIDTH] = {0};
+    crt_compose_scanline_hook_rgb332_256(&sc, rgb, CRT_COMPOSITE_RGB332_ACTIVE_WIDTH, &c);
+    assert(c.line[0] == 0x10);
+
+    uint16_t pal_buf[CRT_COMPOSITE_RGB332_WIDTH] = {0};
+    crt_compose_scanline_hook(&sc, pal_buf, CRT_COMPOSITE_RGB332_WIDTH, &c);
+    assert(c.line[0] == 0x10);
+    assert(pal_buf[0] == g_palette[0x10]);
+    assert(pal_buf[1] == g_palette[0x10]);
+    printf("  palette bank unbound entry is identity: OK\n");
+}
+
 static void test_priority_default_sprite_wins(void)
 {
     run_priority_case(0, 0, 0xFC, 0xFC);
@@ -1401,6 +1586,10 @@ int main(void)
     test_fused_vs_generic_parity();
     test_rgb332_256_tile_base_sprite_overlay();
     test_grayscale_compose_256_expansion_parity();
+    test_palette_bank_identity_when_unbound();
+    test_palette_bank_remap_tile();
+    test_palette_bank_remap_sprite();
+    test_palette_bank_out_of_range_is_identity();
     test_priority_default_sprite_wins();
     test_priority_tile_attr_over_sprite();
     test_priority_sprite_bg_priority();

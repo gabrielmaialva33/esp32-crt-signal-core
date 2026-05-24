@@ -20,11 +20,12 @@ extern "C" {
 #define CRT_SPRITE_INVALID_ID      ((uint8_t)0xFFu)
 #define CRT_SPRITE_DEFAULT_PERLINE 8U
 
-#define CRT_SPRITE_ATTR_HFLIP         (1u << 0) /* mirror columns */
-#define CRT_SPRITE_ATTR_VFLIP         (1u << 1) /* mirror rows */
-#define CRT_SPRITE_ATTR_BG_PRIORITY   (1u << 2) /* sprite drawn behind BG */
+#define CRT_SPRITE_ATTR_HFLIP       (1u << 0) /* mirror columns */
+#define CRT_SPRITE_ATTR_VFLIP       (1u << 1) /* mirror rows */
+#define CRT_SPRITE_ATTR_BG_PRIORITY (1u << 2) /* sprite drawn behind BG */
+/* Bits 3..6 select a crt_compose palette bank; bit 7 remains reserved. */
 #define CRT_SPRITE_ATTR_PALETTE_SHIFT 3
-#define CRT_SPRITE_ATTR_PALETTE_MASK  (0x1Fu << CRT_SPRITE_ATTR_PALETTE_SHIFT)
+#define CRT_SPRITE_ATTR_PALETTE_MASK  (0x0Fu << CRT_SPRITE_ATTR_PALETTE_SHIFT)
 
 typedef enum {
     CRT_SPRITE_SIZE_8X8 = 0,
