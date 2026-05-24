@@ -56,6 +56,7 @@ esp_err_t crt_tile_init(crt_tile_layer_t *t, uint16_t visible_w, uint16_t visibl
         .scroll_x_px = 0,
         .scroll_y_px = 0,
         .palette = NULL,
+        .attributes = NULL,
     };
     return ESP_OK;
 }
@@ -103,6 +104,36 @@ void crt_tile_set_palette(crt_tile_layer_t *t, const uint16_t *palette)
     t->palette = palette;
 }
 
+void crt_tile_set_attributes(crt_tile_layer_t *t, uint8_t *attributes)
+{
+    if (t == NULL) {
+        return;
+    }
+    t->attributes = attributes;
+}
+
+void crt_tile_set_attr(crt_tile_layer_t *t, uint16_t col, uint16_t row, uint8_t attr)
+{
+    if (t == NULL || t->attributes == NULL) {
+        return;
+    }
+    if (col >= t->pitch_w_tiles || row >= t->pitch_h_tiles) {
+        return;
+    }
+    ((uint8_t *)t->attributes)[(size_t)row * t->pitch_w_tiles + col] = attr;
+}
+
+uint8_t crt_tile_get_attr(const crt_tile_layer_t *t, uint16_t col, uint16_t row)
+{
+    if (t == NULL || t->attributes == NULL) {
+        return 0;
+    }
+    if (col >= t->pitch_w_tiles || row >= t->pitch_h_tiles) {
+        return 0;
+    }
+    return t->attributes[(size_t)row * t->pitch_w_tiles + col];
+}
+
 /* ── Hot path building blocks ─────────────────────────────────────── */
 
 /* Compose one logical scanline (visible_w_tiles * 8 pixels) into @p out.
@@ -142,21 +173,58 @@ static IRAM_ATTR void tile_render_logical_line(const crt_tile_layer_t *t, uint16
     uint16_t col = scroll_tile_col;
     uint16_t fine = scroll_fine_x;
 
+    const uint8_t *attributes = t->attributes;
+    if (attributes == NULL) {
+        while (remaining > 0u) {
+            const uint16_t wrapped_col = (t->pitch_w_mask != 0u)
+                                             ? (uint16_t)(col & t->pitch_w_mask)
+                                             : (uint16_t)(col % t->pitch_w_tiles);
+            uint8_t idx = nametable_row[wrapped_col];
+            if (idx >= pattern_count) {
+                idx = 0;
+            }
+            const uint8_t *tile_line =
+                &pattern[(size_t)idx * CRT_TILE_BYTES + (size_t)fine_y * CRT_TILE_PX_W];
+            uint16_t take = (uint16_t)(CRT_TILE_PX_W - fine);
+            if (take > remaining) {
+                take = remaining;
+            }
+            for (uint16_t i = 0; i < take; ++i) {
+                dst[i] = tile_line[fine + i];
+            }
+            dst += take;
+            remaining = (uint16_t)(remaining - take);
+            fine = 0;
+            col++;
+        }
+        return;
+    }
+
     while (remaining > 0u) {
         const uint16_t wrapped_col = (t->pitch_w_mask != 0u) ? (uint16_t)(col & t->pitch_w_mask)
                                                              : (uint16_t)(col % t->pitch_w_tiles);
+        const uint8_t attr = attributes[(size_t)tile_row * t->pitch_w_tiles + wrapped_col];
         uint8_t idx = nametable_row[wrapped_col];
         if (idx >= pattern_count) {
             idx = 0;
         }
+        /* Priority and palette-bank bits are reserved for follow-up compositor work. */
+        const uint16_t sample_y =
+            (attr & CRT_TILE_ATTR_VFLIP) != 0u ? (uint16_t)(7u - fine_y) : fine_y;
         const uint8_t *tile_line =
-            &pattern[(size_t)idx * CRT_TILE_BYTES + (size_t)fine_y * CRT_TILE_PX_W];
+            &pattern[(size_t)idx * CRT_TILE_BYTES + (size_t)sample_y * CRT_TILE_PX_W];
         uint16_t take = (uint16_t)(CRT_TILE_PX_W - fine);
         if (take > remaining) {
             take = remaining;
         }
-        for (uint16_t i = 0; i < take; ++i) {
-            dst[i] = tile_line[fine + i];
+        if ((attr & CRT_TILE_ATTR_HFLIP) != 0u) {
+            for (uint16_t i = 0; i < take; ++i) {
+                dst[i] = tile_line[7u - (fine + i)];
+            }
+        } else {
+            for (uint16_t i = 0; i < take; ++i) {
+                dst[i] = tile_line[fine + i];
+            }
         }
         dst += take;
         remaining = (uint16_t)(remaining - take);

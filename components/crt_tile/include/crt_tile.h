@@ -75,7 +75,31 @@ typedef struct {
      * scanline hook only. Must match the compose palette so
      * delegation is bit-exact with the generic compose output. */
     const uint16_t *palette;
+
+    /* Optional per-tile attribute table — one byte per nametable cell.
+     * NULL means "no attributes" and the layer behaves exactly like the
+     * pre-attribute API (zero regression). When non-NULL, each byte
+     * carries flip + priority + palette-bank bits (see CRT_TILE_ATTR_*).
+     *
+     * Layout matches the nametable: attributes[row * pitch_w_tiles + col]
+     * is the attribute for the tile at (col, row). */
+    const uint8_t *attributes;
 } crt_tile_layer_t;
+
+/* ── Attribute byte layout (per-tile, NES + GBC inspired) ─────────── */
+
+/* Mirror tile pixels horizontally when sampling. */
+#define CRT_TILE_ATTR_HFLIP (1u << 0)
+/* Mirror tile pixels vertically when sampling. */
+#define CRT_TILE_ATTR_VFLIP (1u << 1)
+/* Tile draws OVER sprites (BG-on-top semantics). Compositor honours this
+ * when sprite layers use CRT_SPRITE_ATTR_BG_PRIORITY (see crt_sprite). */
+#define CRT_TILE_ATTR_PRIORITY (1u << 2)
+/* Palette/bank selector for future multi-palette colour modes (item #5
+ * in docs/research/compositor_roadmap.md). Currently reserved — the
+ * present 8bpp pattern path ignores this field. */
+#define CRT_TILE_ATTR_PALETTE_SHIFT 3
+#define CRT_TILE_ATTR_PALETTE_MASK  (0x1Fu << CRT_TILE_ATTR_PALETTE_SHIFT)
 
 /* ── Lifecycle ────────────────────────────────────────────────────── */
 
@@ -101,6 +125,30 @@ esp_err_t crt_tile_init(crt_tile_layer_t *t, uint16_t visible_w, uint16_t visibl
 
 void crt_tile_set_tile(crt_tile_layer_t *t, uint16_t col, uint16_t row, uint8_t tile_idx);
 uint8_t crt_tile_get_tile(const crt_tile_layer_t *t, uint16_t col, uint16_t row);
+
+/* ── Attribute table (optional, NES/GBC-style per-tile attrs) ─────── */
+
+/**
+ * @brief Bind an attribute table. Pass NULL to detach.
+ *
+ * The buffer must hold pitch_w_tiles * pitch_h_tiles bytes and live for
+ * the lifetime of the layer (or until the next bind/detach call). The
+ * pointer is stored as const because the layer never writes through it;
+ * use crt_tile_set_attr to mutate entries through the layer API.
+ */
+void crt_tile_set_attributes(crt_tile_layer_t *t, uint8_t *attributes);
+
+/**
+ * @brief Update one attribute byte. No-op if no attribute table is bound
+ *        or if (col, row) is outside the pitch.
+ */
+void crt_tile_set_attr(crt_tile_layer_t *t, uint16_t col, uint16_t row, uint8_t attr);
+
+/**
+ * @brief Read one attribute byte. Returns 0 when no table is bound or
+ *        when (col, row) is outside the pitch.
+ */
+uint8_t crt_tile_get_attr(const crt_tile_layer_t *t, uint16_t col, uint16_t row);
 
 /**
  * @brief Set scroll in pixel units. Signed input accepted; the layer

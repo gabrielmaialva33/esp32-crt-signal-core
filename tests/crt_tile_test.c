@@ -54,6 +54,18 @@ static void fill_constant_patterns(uint8_t *pattern, uint16_t count)
     }
 }
 
+static void fill_position_pattern(uint8_t *pattern, uint16_t count)
+{
+    for (uint16_t tile = 0; tile < count; ++tile) {
+        for (uint16_t y = 0; y < CRT_TILE_PX_H; ++y) {
+            for (uint16_t x = 0; x < CRT_TILE_PX_W; ++x) {
+                pattern[(size_t)tile * CRT_TILE_BYTES + (size_t)y * CRT_TILE_PX_W + x] =
+                    (uint8_t)((tile * 64u + y * CRT_TILE_PX_W + x) & 0xFFu);
+            }
+        }
+    }
+}
+
 /* ── Tests ────────────────────────────────────────────────────────── */
 
 static void test_init_validation(void)
@@ -103,6 +115,113 @@ static void test_set_get_tile_roundtrip(void)
     assert(crt_tile_get_tile(&t, 100, 100) == 0);
     assert(crt_tile_get_tile(&t, 5, 7) == 42);
     printf("  set/get tile roundtrip: OK\n");
+}
+
+static void test_attr_hflip_one_tile_one_line(void)
+{
+    crt_tile_layer_t t;
+    uint8_t pattern[CRT_TILE_BYTES] = {0};
+    uint8_t nt[1] = {0};
+    uint8_t attrs[1] = {CRT_TILE_ATTR_HFLIP};
+    pattern[0] = 1;
+    pattern[7] = 99;
+
+    assert(crt_tile_init(&t, 1, 1, 1, 1, pattern, 1, nt) == 0);
+    crt_tile_set_attributes(&t, attrs);
+
+    uint8_t out[8];
+    assert(crt_tile_layer_fetch(&t, 0, out, 8) == true);
+    assert(out[0] == 99);
+    assert(out[7] == 1);
+    printf("  attr hflip one tile one line: OK\n");
+}
+
+static void test_attr_vflip_one_tile(void)
+{
+    crt_tile_layer_t t;
+    uint8_t pattern[CRT_TILE_BYTES] = {0};
+    uint8_t nt[1] = {0};
+    uint8_t attrs[1] = {CRT_TILE_ATTR_VFLIP};
+    pattern[0] = 1;
+    pattern[(size_t)7 * CRT_TILE_PX_W] = 99;
+
+    assert(crt_tile_init(&t, 1, 1, 1, 1, pattern, 1, nt) == 0);
+    crt_tile_set_attributes(&t, attrs);
+
+    uint8_t out[8];
+    assert(crt_tile_layer_fetch(&t, 0, out, 8) == true);
+    assert(out[0] == 99);
+    printf("  attr vflip one tile: OK\n");
+}
+
+static void test_attr_both_flip(void)
+{
+    crt_tile_layer_t t;
+    uint8_t pattern[CRT_TILE_BYTES] = {0};
+    uint8_t nt[1] = {0};
+    uint8_t attrs[1] = {CRT_TILE_ATTR_HFLIP | CRT_TILE_ATTR_VFLIP};
+    pattern[(size_t)7 * CRT_TILE_PX_W] = 1;
+    pattern[(size_t)7 * CRT_TILE_PX_W + 7] = 99;
+
+    assert(crt_tile_init(&t, 1, 1, 1, 1, pattern, 1, nt) == 0);
+    crt_tile_set_attributes(&t, attrs);
+
+    uint8_t out[8];
+    assert(crt_tile_layer_fetch(&t, 0, out, 8) == true);
+    assert(out[0] == 99);
+    assert(out[7] == 1);
+    printf("  attr both flip: OK\n");
+}
+
+static void test_attr_null_table_matches_baseline(void)
+{
+    crt_tile_layer_t t;
+    uint8_t pattern[CRT_TILE_BYTES * 4];
+    uint8_t nt[32 * 32];
+    uint8_t attrs[32 * 32] = {0};
+    fill_position_pattern(pattern, 4);
+    memset(nt, 0, sizeof(nt));
+
+    assert(crt_tile_init(&t, 32, 30, 32, 32, pattern, 4, nt) == 0);
+    for (uint16_t c = 0; c < 32; ++c) {
+        crt_tile_set_tile(&t, c, 0, (uint8_t)(c & 3));
+    }
+    crt_tile_set_scroll(&t, 3, 0);
+
+    uint8_t baseline[256];
+    uint8_t with_zero_attrs[256];
+    assert(crt_tile_layer_fetch(&t, 0, baseline, 256) == true);
+    crt_tile_set_attributes(&t, attrs);
+    assert(crt_tile_layer_fetch(&t, 0, with_zero_attrs, 256) == true);
+    assert(memcmp(baseline, with_zero_attrs, sizeof(baseline)) == 0);
+    printf("  attr null table matches baseline: OK\n");
+}
+
+static void test_attr_out_of_range_setter_no_op(void)
+{
+    crt_tile_layer_t t;
+    uint8_t pattern[CRT_TILE_BYTES] = {0};
+    uint8_t nt[1] = {0};
+    uint8_t guarded_attrs[3] = {0xAA, 0x11, 0xBB};
+
+    crt_tile_set_attributes(NULL, &guarded_attrs[1]);
+    assert(crt_tile_init(&t, 1, 1, 1, 1, pattern, 1, nt) == 0);
+    crt_tile_set_attr(&t, 0, 0, 0x55);
+    crt_tile_set_attributes(&t, &guarded_attrs[1]);
+    assert(crt_tile_get_attr(&t, 0, 0) == 0x11);
+    crt_tile_set_attr(&t, 1, 0, 0x22);
+    crt_tile_set_attr(&t, 0, 1, 0x33);
+    crt_tile_set_attr(&t, 9, 9, 0x44);
+    assert(guarded_attrs[0] == 0xAA);
+    assert(guarded_attrs[1] == 0x11);
+    assert(guarded_attrs[2] == 0xBB);
+    assert(crt_tile_get_attr(&t, 1, 0) == 0);
+    assert(crt_tile_get_attr(&t, 0, 1) == 0);
+    crt_tile_set_attr(&t, 0, 0, 0x66);
+    assert(crt_tile_get_attr(&t, 0, 0) == 0x66);
+    crt_tile_set_attributes(&t, NULL);
+    assert(crt_tile_get_attr(&t, 0, 0) == 0);
+    printf("  attr out-of-range setter no-op: OK\n");
 }
 
 static void test_scroll_normalization(void)
@@ -424,6 +543,11 @@ int main(void)
     printf("crt_tile test\n");
     test_init_validation();
     test_set_get_tile_roundtrip();
+    test_attr_hflip_one_tile_one_line();
+    test_attr_vflip_one_tile();
+    test_attr_both_flip();
+    test_attr_null_table_matches_baseline();
+    test_attr_out_of_range_setter_no_op();
     test_scroll_normalization();
     test_fetch_static_nametable();
     test_fetch_with_scroll_x();
