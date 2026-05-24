@@ -638,3 +638,26 @@ crt_composite_rgb332_render_256_to_768(crt_video_standard_t standard, uint16_t l
         d += 12;
     }
 }
+
+IRAM_ATTR void
+crt_composite_palette_render_256_to_768(const uint16_t palette[CRT_COMPOSITE_RGB332_WIDTH],
+                                        const uint8_t src[CRT_COMPOSITE_RGB332_WIDTH],
+                                        uint16_t dst[CRT_COMPOSITE_RGB332_ACTIVE_WIDTH])
+{
+    if (palette == NULL || src == NULL || dst == NULL) {
+        return;
+    }
+
+    uint16_t *d = dst;
+    for (uint16_t pixel = 0; pixel < CRT_COMPOSITE_RGB332_WIDTH; pixel = (uint16_t)(pixel + 2U)) {
+        const uint16_t p0 = palette[src[pixel]];
+        const uint16_t p1 = palette[src[pixel + 1U]];
+        d[0] = p0;
+        d[1] = p0;
+        d[2] = p1;
+        d[3] = p0;
+        d[4] = p1;
+        d[5] = p1;
+        d += 6;
+    }
+}

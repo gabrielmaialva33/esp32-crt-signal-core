@@ -33,6 +33,30 @@ static void init_linear_palette(void)
     }
 }
 
+static void render_palette_256_to_768_expected(const uint8_t *src256, uint16_t *dst768)
+{
+    uint16_t out = 0;
+    uint16_t pending = 0;
+    bool have_pending = false;
+
+    for (uint16_t x = 0; x < CRT_COMPOSITE_RGB332_WIDTH; ++x) {
+        const uint16_t sample = g_palette[src256[x]];
+        for (uint8_t repeat = 0; repeat < 3U; ++repeat) {
+            if (!have_pending) {
+                pending = sample;
+                have_pending = true;
+            } else {
+                dst768[out++] = sample;
+                dst768[out++] = pending;
+                have_pending = false;
+            }
+        }
+    }
+
+    assert(!have_pending);
+    assert(out == CRT_COMPOSITE_RGB332_ACTIVE_WIDTH);
+}
+
 static void init_sprite_atlas(void)
 {
     memset(g_sprite_atlas, 0, sizeof(g_sprite_atlas));
@@ -689,15 +713,34 @@ static void test_sprite_position_frame_size_and_scale(void)
     uint8_t line[32] = {0};
     assert(crt_sprite_layer_fetch(&sprites, 5, line, 32));
     assert(line[0] == 0);
-    assert(line[3] == 145);
-    assert(line[4] == 145);
-    assert(line[5] == 145);
-    assert(line[6] == 146);
+    assert(line[1] == 145);
+    assert(line[2] == 146);
+    assert(line[3] == 147);
+    assert(line[4] == 148);
 
     assert(crt_sprite_set_size(&sprites, sprite_id, CRT_SPRITE_SIZE_32X32) == ESP_ERR_INVALID_ARG);
     assert(crt_sprite_set_enabled(&sprites, sprite_id, false) == 0);
     assert(!crt_sprite_layer_fetch(&sprites, 5, line, 32));
     printf("  sprite position/frame/size/scale: OK\n");
+}
+
+static void test_sprite_scale_always_logical(void)
+{
+    init_sprite_atlas();
+
+    crt_sprite_atlas_t atlas;
+    crt_sprite_layer_t sprites;
+
+    assert(crt_sprite_atlas_init(&atlas, g_sprite_atlas, 256, 32, 256) == 0);
+    assert(crt_sprite_layer_init(&sprites, &atlas, 0) == 0);
+    assert(sprites.x_scale == 1);
+
+    crt_sprite_layer_set_x_scale(&sprites, 3);
+    assert(sprites.x_scale == 1);
+
+    crt_sprite_layer_set_x_scale(&sprites, 0);
+    assert(sprites.x_scale == 1);
+    printf("  sprite scale fixed to logical 256px: OK\n");
 }
 
 static void test_sprite_per_line_cap_and_overflow(void)
@@ -1016,6 +1059,50 @@ static void test_rgb332_256_tile_base_sprite_overlay(void)
     printf("  RGB332 256 logical tile + sprite -> 768 samples: OK\n");
 }
 
+static void test_grayscale_compose_256_expansion_parity(void)
+{
+    memset(g_sprite_atlas, 0, sizeof(g_sprite_atlas));
+
+    const uint8_t bg_idx = 0x24;
+    const uint8_t sprite_idx = 0x7C;
+    g_sprite_atlas[(1U * CRT_SPRITE_CELL_SIZE) + 2U] = sprite_idx;
+    g_sprite_atlas[(1U * CRT_SPRITE_CELL_SIZE) + 3U] = sprite_idx;
+
+    crt_sprite_atlas_t atlas;
+    crt_sprite_layer_t sprites;
+    assert(crt_sprite_atlas_init(&atlas, g_sprite_atlas, CRT_SPRITE_CELL_SIZE,
+                                 CRT_SPRITE_CELL_SIZE, CRT_SPRITE_CELL_SIZE) == 0);
+    assert(crt_sprite_layer_init(&sprites, &atlas, 0) == 0);
+    crt_sprite_layer_set_x_scale(&sprites, 3);
+    assert(crt_sprite_add(&sprites, 0, 0, CRT_SPRITE_SIZE_8X8, 5, 7, NULL) == 0);
+
+    crt_compose_t c;
+    crt_compose_init(&c);
+    init_linear_palette();
+    crt_compose_set_palette(&c, g_palette, 256);
+
+    counting_ctx_t bg = {.calls = 0, .fill = bg_idx};
+    assert(crt_compose_add_layer(&c, counting_fetch, &bg, CRT_COMPOSE_NO_TRANSPARENCY) == 0);
+    assert(crt_compose_add_layer(&c, crt_sprite_layer_fetch, &sprites, 0) == 0);
+
+    crt_scanline_t sc = make_active_line(8);
+    uint16_t actual[CRT_COMPOSITE_RGB332_ACTIVE_WIDTH] = {0};
+    uint16_t expected[CRT_COMPOSITE_RGB332_ACTIVE_WIDTH] = {0};
+    uint8_t expected_logical[CRT_COMPOSITE_RGB332_WIDTH];
+
+    memset(expected_logical, bg_idx, sizeof(expected_logical));
+    expected_logical[7] = sprite_idx;
+    expected_logical[8] = sprite_idx;
+    render_palette_256_to_768_expected(expected_logical, expected);
+
+    crt_compose_scanline_hook(&sc, actual, CRT_COMPOSITE_RGB332_ACTIVE_WIDTH, &c);
+
+    assert(memcmp(actual, expected, sizeof(actual)) == 0);
+    assert(bg.calls == 1);
+    assert(sprites.last_line_rendered == 1);
+    printf("  grayscale compose 256 logical -> 768 palette samples: OK\n");
+}
+
 static void init_priority_scene(crt_tile_layer_t *tile, crt_sprite_layer_t *sprites,
                                 uint8_t tile_attr, uint8_t sprite_attr, uint8_t sprite_pixel)
 {
@@ -1300,6 +1387,7 @@ int main(void)
     test_builtin_viewport_layer_scrolls_and_clips();
     test_sprite_atlas_and_basic_fetch();
     test_sprite_position_frame_size_and_scale();
+    test_sprite_scale_always_logical();
     test_sprite_per_line_cap_and_overflow();
     test_sprite_attr_hflip_one_sprite();
     test_sprite_attr_vflip_one_sprite();
@@ -1312,6 +1400,7 @@ int main(void)
     test_fused_base_plus_present_overlay_materializes();
     test_fused_vs_generic_parity();
     test_rgb332_256_tile_base_sprite_overlay();
+    test_grayscale_compose_256_expansion_parity();
     test_priority_default_sprite_wins();
     test_priority_tile_attr_over_sprite();
     test_priority_sprite_bg_priority();

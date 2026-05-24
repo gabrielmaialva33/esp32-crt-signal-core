@@ -72,8 +72,9 @@ void crt_sprite_layer_set_max_sprites_per_line(crt_sprite_layer_t *layer, uint8_
 
 void crt_sprite_layer_set_x_scale(crt_sprite_layer_t *layer, uint8_t x_scale)
 {
+    (void)x_scale;
     if (layer != NULL) {
-        layer->x_scale = (x_scale == 0) ? 1 : x_scale;
+        layer->x_scale = 1;
     }
 }
 
@@ -305,16 +306,12 @@ IRAM_ATTR bool crt_sprite_layer_fetch_with_attrs(void *ctx, uint16_t logical_lin
                 }
 
                 const int32_t logical_x = (int32_t)sprite->x + sx;
-                const int32_t out_x0 = logical_x * layer->x_scale;
-                for (uint8_t scale = 0; scale < layer->x_scale; ++scale) {
-                    const int32_t out_x = out_x0 + scale;
-                    if (out_x >= 0 && out_x < width) {
-                        idx_out[out_x] = sample;
-                        if (attr_out != NULL) {
-                            attr_out[out_x] = compose_attr;
-                        }
-                        wrote_pixel = true;
+                if (logical_x >= 0 && logical_x < width) {
+                    idx_out[logical_x] = sample;
+                    if (attr_out != NULL) {
+                        attr_out[logical_x] = compose_attr;
                     }
+                    wrote_pixel = true;
                 }
             }
         } else {
@@ -325,16 +322,12 @@ IRAM_ATTR bool crt_sprite_layer_fetch_with_attrs(void *ctx, uint16_t logical_lin
                 }
 
                 const int32_t logical_x = (int32_t)sprite->x + sx;
-                const int32_t out_x0 = logical_x * layer->x_scale;
-                for (uint8_t scale = 0; scale < layer->x_scale; ++scale) {
-                    const int32_t out_x = out_x0 + scale;
-                    if (out_x >= 0 && out_x < width) {
-                        idx_out[out_x] = sample;
-                        if (attr_out != NULL) {
-                            attr_out[out_x] = compose_attr;
-                        }
-                        wrote_pixel = true;
+                if (logical_x >= 0 && logical_x < width) {
+                    idx_out[logical_x] = sample;
+                    if (attr_out != NULL) {
+                        attr_out[logical_x] = compose_attr;
                     }
+                    wrote_pixel = true;
                 }
             }
         }

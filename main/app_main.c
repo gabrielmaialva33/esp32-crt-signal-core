@@ -118,7 +118,7 @@ IRAM_ATTR static void demo_frame_hook(uint32_t frame, void *user_data)
 
     crt_tile_set_scroll(&s_tile, (int)(frame % (TILE_VISIBLE_W * 8U)), 0);
 
-    /* Sprite world is logical 256x240 (before x_scale=3). Bounce inside
+    /* Sprite world is logical 256x240. Bounce inside
      * [0 .. 256-16] horizontally and [0 .. 240-16] vertically per sprite. */
     static int16_t s_dx[APP_DEMO_SPRITE_COUNT] = {1, -1, 2};
     static int16_t s_dy[APP_DEMO_SPRITE_COUNT] = {1, 2, -1};
@@ -1029,15 +1029,11 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
         crt_compose_add_layer_fused_with_attrs(&s_compose, crt_tile_layer_fetch_with_attrs,
                                                crt_tile_scanline_hook, &s_tile);
 
-        /* Layer 1: sprite layer (single keyed layer holding the OAM). The
-         * grayscale DAC path writes directly into the 768-sample active line,
-         * so sprites expand 3x there. The RGB332 compose path stays in the
-         * 256-pixel logical domain and lets the final encoder expand to 768. */
+        /* Layer 1: sprite layer (single keyed layer holding the OAM). */
         demo_sprite_atlas_fill();
         crt_sprite_atlas_init(&s_sprite_atlas, s_sprite_atlas_data, 64U, 16U, 64U);
         crt_sprite_layer_init(&s_sprite_layer, &s_sprite_atlas, /* key */ 0);
         crt_sprite_layer_set_max_sprites_per_line(&s_sprite_layer, CRT_SPRITE_DEFAULT_PERLINE);
-        crt_sprite_layer_set_x_scale(&s_sprite_layer, k_use_rgb332_compose ? 1U : 3U);
 
         for (size_t i = 0; i < APP_DEMO_SPRITE_COUNT; ++i) {
             const int16_t spawn_x = (int16_t)(40 + i * 56);

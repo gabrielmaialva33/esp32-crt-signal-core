@@ -54,6 +54,7 @@ typedef struct {
     crt_sprite_t sprites[CRT_SPRITE_MAX_SPRITES];
     uint8_t sprite_count;
     uint8_t max_sprites_per_line;
+    /** Deprecated compatibility field. Sprite fetch always uses logical x_scale=1. */
     uint8_t x_scale;
     uint8_t transparent_idx;
     uint32_t overflow_count;
@@ -69,6 +70,7 @@ esp_err_t crt_sprite_layer_init(crt_sprite_layer_t *layer, const crt_sprite_atla
                                 uint8_t transparent_idx);
 
 void crt_sprite_layer_set_max_sprites_per_line(crt_sprite_layer_t *layer, uint8_t max_sprites);
+/** Deprecated compatibility no-op. Sprites always render in 256-pixel logical space. */
 void crt_sprite_layer_set_x_scale(crt_sprite_layer_t *layer, uint8_t x_scale);
 void crt_sprite_layer_reset_stats(crt_sprite_layer_t *layer);
 

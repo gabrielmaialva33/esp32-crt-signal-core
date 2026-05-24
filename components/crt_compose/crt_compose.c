@@ -258,21 +258,6 @@ IRAM_ATTR static void crt_compose_merge_keyed_line(crt_compose_t *c, uint16_t wi
     }
 }
 
-IRAM_ATTR static uint8_t crt_compose_resolve_keyed_pixel(const crt_compose_t *c, uint16_t x,
-                                                         uint8_t key)
-{
-    const uint8_t s = c->scratch[x];
-    if (s == key) {
-        return c->line[x];
-    }
-    const uint8_t attr = c->attr_scratch[x];
-    if ((attr & CRT_COMPOSE_PIXEL_SPRITE_OPAQUE) != 0u &&
-        crt_compose_sprite_pixel_blocked(c->attr_line[x], attr)) {
-        return c->line[x];
-    }
-    return s;
-}
-
 IRAM_ATTR static void crt_compose_render_indexed_line(crt_compose_t *c, uint16_t logical_line,
                                                       uint16_t width)
 {
@@ -312,6 +297,31 @@ IRAM_ATTR static void crt_compose_render_indexed_line(crt_compose_t *c, uint16_t
     }
 }
 
+IRAM_ATTR static void crt_compose_render_palette_line(const crt_compose_t *c, uint16_t *active_buf,
+                                                      uint16_t active_width, uint16_t logical_width)
+{
+    if (active_width == CRT_COMPOSITE_RGB332_ACTIVE_WIDTH &&
+        logical_width == CRT_COMPOSITE_RGB332_WIDTH) {
+        crt_composite_palette_render_256_to_768(c->palette, c->line, active_buf);
+        return;
+    }
+
+    const uint8_t *line = c->line;
+    const uint16_t *pal = c->palette;
+    const uint16_t even_width = logical_width & (uint16_t)~1U;
+    uint16_t i = 0;
+
+    for (; i < even_width; i += 2) {
+        uint16_t p0 = pal[line[i]];
+        uint16_t p1 = pal[line[i + 1]];
+        active_buf[i] = p1;
+        active_buf[i + 1] = p0;
+    }
+    if (i < logical_width) {
+        active_buf[i] = pal[line[i]];
+    }
+}
+
 IRAM_ATTR void crt_compose_scanline_hook(const crt_scanline_t *scanline, uint16_t *active_buf,
                                          uint16_t active_width, void *user_data)
 {
@@ -322,6 +332,9 @@ IRAM_ATTR void crt_compose_scanline_hook(const crt_scanline_t *scanline, uint16_
         !CRT_SCANLINE_HAS_LOGICAL(scanline)) {
         return;
     }
+
+    const bool expand_256_to_768 = (active_width == CRT_COMPOSITE_RGB332_ACTIVE_WIDTH);
+    const uint16_t logical_width = expand_256_to_768 ? CRT_COMPOSITE_RGB332_WIDTH : active_width;
 
     /* Pre-scan: classify the active layer stack for the hot path picker.
      * Two layer counts matter:
@@ -356,31 +369,20 @@ IRAM_ATTR void crt_compose_scanline_hook(const crt_scanline_t *scanline, uint16_
         const crt_compose_layer_t *base = &c->layers[base_idx];
         const crt_compose_layer_t *keyed = &c->layers[keyed_idx];
 
-        memset(c->attr_scratch, 0, active_width);
+        memset(c->attr_scratch, 0, logical_width);
         if (!crt_compose_fetch_layer(keyed, scanline->logical_line, c->scratch, c->attr_scratch,
-                                     active_width)) {
+                                     logical_width)) {
             base->scanline_override(scanline, active_buf, active_width, base->ctx);
             return;
         }
 
-        memset(c->attr_line, 0, active_width);
+        memset(c->attr_line, 0, logical_width);
         (void)crt_compose_fetch_layer(base, scanline->logical_line, c->line, c->attr_line,
-                                      active_width);
+                                      logical_width);
 
         const uint8_t key = (uint8_t)keyed->transparent_idx;
-        const uint16_t *pal = c->palette;
-        const uint16_t even_width = active_width & (uint16_t)~1U;
-        uint16_t i = 0;
-        for (; i < even_width; i += 2) {
-            uint8_t v0 = crt_compose_resolve_keyed_pixel(c, i, key);
-            uint8_t v1 = crt_compose_resolve_keyed_pixel(c, (uint16_t)(i + 1U), key);
-            active_buf[i] = pal[v1];
-            active_buf[i + 1] = pal[v0];
-        }
-        if (i < active_width) {
-            uint8_t v = crt_compose_resolve_keyed_pixel(c, i, key);
-            active_buf[i] = pal[v];
-        }
+        crt_compose_merge_keyed_line(c, logical_width, key);
+        crt_compose_render_palette_line(c, active_buf, active_width, logical_width);
         return;
     }
 
@@ -405,21 +407,21 @@ IRAM_ATTR void crt_compose_scanline_hook(const crt_scanline_t *scanline, uint16_
                 continue;
             }
 
-            memset(c->attr_scratch, 0, active_width);
+            memset(c->attr_scratch, 0, logical_width);
             if (!crt_compose_fetch_layer(layer, scanline->logical_line, c->scratch, c->attr_scratch,
-                                         active_width)) {
+                                         logical_width)) {
                 continue;
             }
 
             if (!line_materialized) {
-                memset(c->attr_line, 0, active_width);
+                memset(c->attr_line, 0, logical_width);
                 (void)crt_compose_fetch_layer(base, scanline->logical_line, c->line, c->attr_line,
-                                              active_width);
+                                              logical_width);
                 line_materialized = true;
             }
 
             const uint8_t key = (uint8_t)layer->transparent_idx;
-            crt_compose_merge_keyed_line(c, active_width, key);
+            crt_compose_merge_keyed_line(c, logical_width, key);
         }
 
         if (!line_materialized) {
@@ -441,51 +443,36 @@ IRAM_ATTR void crt_compose_scanline_hook(const crt_scanline_t *scanline, uint16_
             }
 
             if (layer->transparent_idx == CRT_COMPOSE_NO_TRANSPARENCY) {
-                memset(c->attr_line, 0, active_width);
+                memset(c->attr_line, 0, logical_width);
                 (void)crt_compose_fetch_layer(layer, scanline->logical_line, c->line, c->attr_line,
-                                              active_width);
+                                              logical_width);
                 line_ready = true;
                 continue;
             }
 
             if (!line_ready) {
-                memset(c->line, c->clear_idx, active_width);
-                memset(c->attr_line, 0, active_width);
+                memset(c->line, c->clear_idx, logical_width);
+                memset(c->attr_line, 0, logical_width);
                 line_ready = true;
             }
 
-            memset(c->attr_scratch, 0, active_width);
+            memset(c->attr_scratch, 0, logical_width);
             if (!crt_compose_fetch_layer(layer, scanline->logical_line, c->scratch, c->attr_scratch,
-                                         active_width)) {
+                                         logical_width)) {
                 continue;
             }
 
             const uint8_t key = (uint8_t)layer->transparent_idx;
-            crt_compose_merge_keyed_line(c, active_width, key);
+            crt_compose_merge_keyed_line(c, logical_width, key);
         }
 
         if (!line_ready) {
-            memset(c->line, c->clear_idx, active_width);
-            memset(c->attr_line, 0, active_width);
+            memset(c->line, c->clear_idx, logical_width);
+            memset(c->attr_line, 0, logical_width);
         }
     }
 
-    /* Final pass: palette LUT + I2S word-swap (paired 16-bit writes).
-     * Mirrors crt_fb_scanline_hook to keep the hot path identical. */
-    const uint8_t *line = c->line;
-    const uint16_t *pal = c->palette;
-    const uint16_t even_width = active_width & (uint16_t)~1U;
-    uint16_t i = 0;
-
-    for (; i < even_width; i += 2) {
-        uint16_t p0 = pal[line[i]];
-        uint16_t p1 = pal[line[i + 1]];
-        active_buf[i] = p1;
-        active_buf[i + 1] = p0;
-    }
-    if (i < active_width) {
-        active_buf[i] = pal[line[i]];
-    }
+    crt_compose_render_palette_line(c, active_buf, active_width, logical_width);
 }
 
 IRAM_ATTR void crt_compose_scanline_hook_rgb332_256(const crt_scanline_t *scanline,

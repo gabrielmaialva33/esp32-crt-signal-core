@@ -20,6 +20,9 @@ void crt_composite_rgb332_encode_quad(crt_video_standard_t standard, uint16_t li
 void crt_composite_rgb332_render_256_to_768(crt_video_standard_t standard, uint16_t line_index,
                                             const uint8_t src[CRT_COMPOSITE_RGB332_WIDTH],
                                             uint16_t dst[CRT_COMPOSITE_RGB332_ACTIVE_WIDTH]);
+void crt_composite_palette_render_256_to_768(const uint16_t palette[CRT_COMPOSITE_RGB332_WIDTH],
+                                             const uint8_t src[CRT_COMPOSITE_RGB332_WIDTH],
+                                             uint16_t dst[CRT_COMPOSITE_RGB332_ACTIVE_WIDTH]);
 
 #ifdef __cplusplus
 }
