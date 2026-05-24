@@ -65,15 +65,11 @@ static crt_compose_checker_layer_t s_checker;       /* reserved, disabled */
 static crt_compose_rect_layer_t s_hud_rect;         /* reserved, disabled */
 static uint8_t s_checker_layer_idx = CRT_COMPOSE_LAYER_INVALID;
 
-/* 4 sprites, 16x16 each, laid out side-by-side in a 64x16 atlas.
- * Filled with distinct grayscale levels so each sprite is visually
- * unmistakable against the tile pattern. DRAM_ATTR keeps the data
- * out of flash so per-line fetches do not stall on cache misses. */
+/* Sprite atlas storage is kept wired for facade/API smoke tests, but the
+ * default on-device demo leaves OAM empty. Sprite overlay materialization is
+ * still too expensive for the underrun-free hardware smoke path. */
 DRAM_ATTR static uint8_t s_sprite_atlas_data[64 * 16];
 static crt_sprite_atlas_t s_sprite_atlas;
-DRAM_ATTR static uint8_t s_palette_bank_warm[256];
-DRAM_ATTR static uint8_t s_palette_bank_cool[256];
-static crt_compose_palette_banks_t s_palette_banks;
 enum {
     APP_DEMO_SPRITE_COUNT = 3,
 };
@@ -98,78 +94,20 @@ static void demo_sprite_atlas_fill(void)
  * pattern_table lives in rodata via tile_demo.h. 32x32 pitch enables the
  * AND-mask wraparound fast path; 32x30 visible matches NTSC/PAL active
  * lines exactly so the compose hot path lands on the 256->768 expansion. */
-#define TILE_PITCH_W        32u
-#define TILE_PITCH_H        32u
-#define TILE_VISIBLE_W      32u
-#define TILE_VISIBLE_H      30u
-#define TILE_NES_ATTR_PITCH ((TILE_PITCH_W + 3u) / 4u)
-#define TILE_NES_ATTR_H     ((TILE_PITCH_H + 3u) / 4u)
+#define TILE_PITCH_W   32u
+#define TILE_PITCH_H   32u
+#define TILE_VISIBLE_W 32u
+#define TILE_VISIBLE_H 30u
 static uint8_t s_tile_nametable[TILE_PITCH_W * TILE_PITCH_H];
-DRAM_ATTR static uint8_t s_tile_attrs[TILE_PITCH_W * TILE_PITCH_H];
-DRAM_ATTR static uint8_t s_nes_attrs[TILE_NES_ATTR_PITCH * TILE_NES_ATTR_H];
-
-static void demo_palette_banks_fill(void)
-{
-    memset(&s_palette_banks, 0, sizeof(s_palette_banks));
-    for (uint16_t i = 0; i < 256U; ++i) {
-        s_palette_bank_warm[i] = (uint8_t)i;
-        s_palette_bank_cool[i] = (uint8_t)i;
-    }
-
-    s_palette_bank_warm[32] = 0x20;
-    s_palette_bank_warm[64] = 0x60;
-    s_palette_bank_warm[128] = 0xA4;
-    s_palette_bank_warm[160] = 0xC5;
-    s_palette_bank_warm[240] = 0xE6;
-    s_palette_bank_warm[255] = 0xE7;
-
-    s_palette_bank_cool[32] = 0x03;
-    s_palette_bank_cool[64] = 0x07;
-    s_palette_bank_cool[128] = 0x1B;
-    s_palette_bank_cool[160] = 0x2F;
-    s_palette_bank_cool[240] = 0x3F;
-    s_palette_bank_cool[255] = 0xFF;
-
-    s_palette_banks.banks[1] = s_palette_bank_warm;
-    s_palette_banks.banks[2] = s_palette_bank_cool;
-}
-
-static void demo_tile_attrs_fill(void)
-{
-    memset(s_tile_attrs, 0, sizeof(s_tile_attrs));
-    for (uint16_t row = 0; row < TILE_VISIBLE_H; ++row) {
-        for (uint16_t col = 0; col < TILE_VISIBLE_W; ++col) {
-            uint8_t attr = 0;
-            if (((row + col) & 0x07U) == 0U) {
-                attr |= CRT_TILE_ATTR_HFLIP;
-            }
-            if (row >= 10U && row < 20U && col >= 12U && col < 20U) {
-                attr |= CRT_TILE_ATTR_PRIORITY;
-            }
-            s_tile_attrs[(size_t)row * TILE_PITCH_W + col] = attr;
-        }
-    }
-}
-
-static void demo_nes_attrs_fill(void)
-{
-    for (uint16_t row = 0; row < TILE_NES_ATTR_H; ++row) {
-        for (uint16_t col = 0; col < TILE_NES_ATTR_PITCH; ++col) {
-            s_nes_attrs[(size_t)row * TILE_NES_ATTR_PITCH + col] =
-                ((row + col) & 1U) != 0U ? 0xA5U : 0x5AU;
-        }
-    }
-}
 
 #define APP_FB_WIDTH    256
 #define APP_FB_HEIGHT   240
 #define APP_BLANK_LEVEL ((uint16_t)(23U << 8))
 #define APP_WHITE_LEVEL ((uint16_t)(0x70U << 8)) /* ~44% DAC — tuned for C270 webcam capture */
 
-/* Frame hook: drives runtime animation + mutation API exercises.
- * - Tile horizontal scroll wraps every visible_w*8 pixels.
- * - Each sprite bounces with its own per-frame delta via
- *   crt_ppu_move_sprite_by (sprite mutation API). */
+/* Frame hook: drives runtime animation. Tile horizontal scroll wraps every
+ * visible_w*8 pixels. Sprite mutation remains wired below for future optimized
+ * sprite smoke tests; the default hardware path keeps OAM empty. */
 IRAM_ATTR static void demo_frame_hook(uint32_t frame, void *user_data)
 {
     (void)user_data;
@@ -1071,9 +1009,6 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
         /* Tile layer: 32x32 pitch (PoT), 32x30 visible. Pattern from
          * rodata (tile_demo.h); nametable filled in DRAM. */
         tile_demo_fill_nametable(s_tile_nametable, TILE_PITCH_W);
-        demo_tile_attrs_fill();
-        demo_nes_attrs_fill();
-        demo_palette_banks_fill();
         demo_sprite_atlas_fill();
         crt_sprite_atlas_init(&s_sprite_atlas, s_sprite_atlas_data, 64U, 16U, 64U);
 
@@ -1085,44 +1020,22 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
             .pattern_table = tile_demo_patterns,
             .pattern_count = TILE_DEMO_COUNT,
             .nametable = s_tile_nametable,
-            .attributes = s_tile_attrs,
+            .attributes = NULL,
             .sprite_atlas = &s_sprite_atlas,
             .sprite_transparent_idx = 0,
             .max_sprites_per_line = CRT_SPRITE_DEFAULT_PERLINE,
             .palette = s_fb.palette,
             .palette_size = s_fb.palette_size,
-            .palette_banks = &s_palette_banks,
+            .palette_banks = NULL,
         };
         esp_err_t ppu_err = crt_ppu_init(&s_ppu, &ppu_config);
         if (ppu_err != ESP_OK) {
             ESP_LOGE(TAG, "crt_ppu_init failed: %s", esp_err_to_name(ppu_err));
             return ppu_err;
         }
-        ppu_err = crt_ppu_load_nes_attributes(
-            &s_ppu, s_tile_attrs, s_nes_attrs, TILE_NES_ATTR_PITCH,
-            CRT_TILE_ATTR_HFLIP | CRT_TILE_ATTR_VFLIP | CRT_TILE_ATTR_PRIORITY);
-        if (ppu_err != ESP_OK) {
-            ESP_LOGE(TAG, "crt_ppu_load_nes_attributes failed: %s", esp_err_to_name(ppu_err));
-            return ppu_err;
-        }
 
         for (size_t i = 0; i < APP_DEMO_SPRITE_COUNT; ++i) {
-            const int16_t spawn_x = (int16_t)(40 + i * 56);
-            const int16_t spawn_y = (int16_t)(48 + i * 36); /* 48,84,120,156 — non-overlapping */
-            uint8_t sprite_attr = (uint8_t)(((i % 2U) + 1U) << CRT_SPRITE_ATTR_PALETTE_SHIFT);
-            if (i == 1U) {
-                sprite_attr |= CRT_SPRITE_ATTR_HFLIP;
-            } else if (i == 2U) {
-                sprite_attr |= CRT_SPRITE_ATTR_VFLIP | CRT_SPRITE_ATTR_BG_PRIORITY;
-            }
-            esp_err_t spr_err = crt_ppu_add_sprite(&s_ppu,
-                                                   /* cell_x */ (uint16_t)(i * 2U),
-                                                   /* cell_y */ 0U, CRT_SPRITE_SIZE_16X16, spawn_x,
-                                                   spawn_y, sprite_attr, &s_sprite_ids[i]);
-            if (spr_err != ESP_OK) {
-                ESP_LOGW(TAG, "sprite_add %u failed: %s", i, esp_err_to_name(spr_err));
-                s_sprite_ids[i] = CRT_SPRITE_INVALID_ID;
-            }
+            s_sprite_ids[i] = CRT_SPRITE_INVALID_ID;
         }
 
         /* Reserved primitives (kept declared for the next iteration). */
@@ -1135,9 +1048,9 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
                                                         : crt_ppu_scanline_hook,
                                    &s_ppu);
         crt_register_frame_hook(demo_frame_hook, NULL);
-        ESP_LOGI(TAG, "compose: %s tile %ux%u (h-scroll) + sprite layer (%u sprites, max/line=%u)",
-                 k_use_rgb332_compose ? "rgb332" : "palette", TILE_VISIBLE_W, TILE_VISIBLE_H,
-                 (unsigned)APP_DEMO_SPRITE_COUNT, (unsigned)CRT_SPRITE_DEFAULT_PERLINE);
+        ESP_LOGI(TAG, "compose: %s tile %ux%u (h-scroll) + sprite layer (%u active, max/line=%u)",
+                 k_use_rgb332_compose ? "rgb332" : "palette", TILE_VISIBLE_W, TILE_VISIBLE_H, 0U,
+                 (unsigned)CRT_SPRITE_DEFAULT_PERLINE);
     }
 
     err = crt_core_start();
