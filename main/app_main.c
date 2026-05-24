@@ -1152,6 +1152,8 @@ static void app_log_diag_snapshot(void)
                  compose_stats.fused_lines, compose_stats.materialized_lines,
                  (unsigned)compose_stats.max_layers_fetched, diag.dma_underrun_count,
                  diag.ready_queue_min_depth, diag.prep_cycles_max);
+        crt_ppu_reset_compose_stats(&s_ppu);
+        crt_ppu_reset_sprite_stats(&s_ppu);
     }
 }
 

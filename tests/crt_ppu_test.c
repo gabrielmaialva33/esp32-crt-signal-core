@@ -259,6 +259,30 @@ static void test_sprite_peak_stats(void) {
     printf("  sprite peak stats: OK\n");
 }
 
+static void test_compose_stats_reset(void) {
+    crt_ppu_t ppu;
+    crt_sprite_atlas_t atlas;
+    init_palette();
+    init_assets(&atlas);
+    crt_ppu_config_t config = make_config(&atlas);
+    assert(crt_ppu_init(&ppu, &config) == 0);
+
+    crt_scanline_t sc = make_active_line(0);
+    uint16_t pal_buf[CRT_COMPOSITE_RGB332_WIDTH] = {0};
+    crt_ppu_scanline_hook(&sc, pal_buf, CRT_COMPOSITE_RGB332_WIDTH, &ppu);
+
+    crt_compose_stats_t stats = crt_ppu_get_compose_stats(&ppu);
+    assert(stats.fused_lines + stats.materialized_lines == 1);
+    assert(stats.max_layers_fetched > 0);
+
+    crt_ppu_reset_compose_stats(&ppu);
+    stats = crt_ppu_get_compose_stats(&ppu);
+    assert(stats.fused_lines == 0);
+    assert(stats.materialized_lines == 0);
+    assert(stats.max_layers_fetched == 0);
+    printf("  compose stats reset: OK\n");
+}
+
 int main(void) {
     printf("crt_ppu test\n");
     test_init_validation();
@@ -266,6 +290,7 @@ int main(void) {
     test_tile_attr_sprite_and_hooks();
     test_sprite_overflow_stats();
     test_sprite_peak_stats();
+    test_compose_stats_reset();
     printf("ALL PASSED\n");
     return 0;
 }
