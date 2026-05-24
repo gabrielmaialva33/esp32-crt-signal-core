@@ -55,6 +55,11 @@ static crt_fb_surface_t s_fb;
 static crt_ppu_t s_ppu;
 static crt_stimulus_t s_stimulus;
 
+static bool app_uses_compose_demo(void)
+{
+    return !k_use_rgb332_framebuffer && !k_use_stimulus;
+}
+
 /* Demo scene:
  *   layer 0 fused: tile (horizontal scroll per frame)
  *   layer 1 keyed: crt_sprite_layer with bouncing 16x16 sprites
@@ -1115,6 +1120,16 @@ static void app_log_diag_snapshot(void)
     crt_core_get_diag_snapshot(&diag);
     ESP_LOGI(TAG, "diag: underruns=%" PRIu32 " queue_min=%" PRIu32 " prep_max=%" PRIu32 " cycles",
              diag.dma_underrun_count, diag.ready_queue_min_depth, diag.prep_cycles_max);
+    if (app_uses_compose_demo()) {
+        ESP_LOGI(TAG,
+                 "compose_budget: mode=%s attrs=tile banks=tile scroll=h sprites=%u max/line=%u "
+                 "active=%ux%u underruns=%" PRIu32 " queue_min=%" PRIu32 " prep_max=%" PRIu32
+                 " cycles",
+                 k_use_rgb332_compose ? "rgb332" : "palette", (unsigned)APP_DEMO_SPRITE_COUNT,
+                 (unsigned)CRT_SPRITE_DEFAULT_PERLINE, (unsigned)(TILE_VISIBLE_W * CRT_TILE_PX_W),
+                 (unsigned)(TILE_VISIBLE_H * CRT_TILE_PX_H), diag.dma_underrun_count,
+                 diag.ready_queue_min_depth, diag.prep_cycles_max);
+    }
 }
 
 #if !CONFIG_CRT_TEST_STANDARD_TOGGLE
