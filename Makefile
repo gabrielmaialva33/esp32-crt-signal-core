@@ -38,6 +38,7 @@ TEST_INC    := -I tests/stubs \
                -I components/crt_compose/include \
                -I components/crt_stimulus/include \
                -I components/crt_tile/include \
+               -I components/crt_ppu/include \
                -I components/crt_hal/include
 TEST_OUT    := /tmp
 LINT_SOURCES := components/crt_core/crt_waveform.c \
@@ -51,11 +52,12 @@ LINT_SOURCES := components/crt_core/crt_waveform.c \
                 components/crt_compose/crt_compose_layers.c \
                 components/crt_compose/crt_sprite.c \
                 components/crt_tile/crt_tile.c \
+                components/crt_ppu/crt_ppu.c \
                 components/crt_stimulus/crt_stimulus.c
 
 .PHONY: test test-core test-render test-burst test-policy test-timing test-demo test-hal-clock \
         test-composite-palette test-scanline-abi test-scanline-header test-fb test-compose \
-        test-stimulus test-tile
+        test-stimulus test-tile test-ppu
 
 test: test-core test-render  ## Run all host tests
 	@echo "\n✓ All tests passed"
@@ -63,7 +65,7 @@ test: test-core test-render  ## Run all host tests
 test-core: test-burst test-policy test-timing test-demo test-hal-clock test-composite-palette test-scanline-abi test-scanline-header  ## Run core host tests
 	@echo "\n✓ Core tests passed"
 
-test-render: test-fb test-compose test-stimulus test-tile  ## Run render adapter host tests
+test-render: test-fb test-compose test-stimulus test-tile test-ppu  ## Run render adapter host tests
 	@echo "\n✓ Render tests passed"
 
 test-burst:
@@ -128,6 +130,13 @@ test-tile:
 	@$(TEST_CC) $(TEST_CFLAGS) $(TEST_INC) \
 		tests/crt_tile_test.c components/crt_tile/crt_tile.c \
 		-o $(TEST_OUT)/crt_tile_test && $(TEST_OUT)/crt_tile_test
+
+test-ppu:
+	@$(TEST_CC) $(TEST_CFLAGS) $(TEST_INC) \
+		tests/crt_ppu_test.c components/crt_ppu/crt_ppu.c components/crt_tile/crt_tile.c \
+		components/crt_compose/crt_compose.c components/crt_compose/crt_sprite.c \
+		components/crt_core/crt_composite_palette.c \
+		-o $(TEST_OUT)/crt_ppu_test && $(TEST_OUT)/crt_ppu_test
 
 # ── Lint / Format ────────────────────────────────────────────────────
 
