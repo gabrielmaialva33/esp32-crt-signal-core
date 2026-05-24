@@ -21,6 +21,15 @@ static const crt_hal_apll_coeff_t k_apll_profiles[] = {
         .sdm1 = 0xA4,
         .sdm2 = 0x06,
     },
+    {
+        .name = "PAL-M 4x colorburst",
+        .sample_rate_hz = 14302446,
+        .apll_hz = 57209784,
+        .o_div = 1,
+        .sdm0 = 0xDB,
+        .sdm1 = 0x94,
+        .sdm2 = 0x04,
+    },
 };
 
 bool crt_hal_apll_coeffs_for_sample_rate(uint32_t sample_rate_hz, crt_hal_apll_coeff_t *out_coeffs)

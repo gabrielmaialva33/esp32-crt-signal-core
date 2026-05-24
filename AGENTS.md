@@ -184,7 +184,7 @@ make lint-py
 
 ## Kconfig Surface
 
-- `CRT_VIDEO_STANDARD`: selects NTSC or PAL timing
+- `CRT_VIDEO_STANDARD`: selects NTSC-M, PAL-B/G, or PAL-M timing
 - `CRT_ENABLE_COLOR`: enables chroma burst and color demo output
 - `CRT_RENDER_MODE`: selects compositor demo, direct RGB332 framebuffer, or measurement stimulus
 - `CRT_ENABLE_UART_UPLOAD`: enables experimental UART0 raw framebuffer upload

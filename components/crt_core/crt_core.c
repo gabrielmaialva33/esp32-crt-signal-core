@@ -121,7 +121,8 @@ static void crt_core_burst_stage(const crt_line_context_t *ctx, crt_line_buffer_
         burst_width = line->sample_count - ctx->burst_offset;
     }
 
-    if (ctx->video_standard == CRT_VIDEO_STANDARD_PAL) {
+    if (ctx->video_standard == CRT_VIDEO_STANDARD_PAL ||
+        ctx->video_standard == CRT_VIDEO_STANDARD_PAL_M) {
         /* Match the legacy phase alternation: line 0 starts with the inverted template. */
         template =
             ((ctx->line_index & 0x1U) == 0U) ? burst_state->pal_phase_b : burst_state->pal_phase_a;

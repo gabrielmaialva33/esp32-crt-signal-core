@@ -7,10 +7,13 @@ choice CRT_VIDEO_STANDARD
         Select the composite timing profile used by the CRT core.
 
 config CRT_VIDEO_STANDARD_NTSC
-    bool "NTSC"
+    bool "NTSC-M (525/60)"
 
 config CRT_VIDEO_STANDARD_PAL
-    bool "PAL"
+    bool "PAL-B/G (625/50)"
+
+config CRT_VIDEO_STANDARD_PAL_M
+    bool "PAL-M (Brazil, 525/60)"
 
 endchoice
 

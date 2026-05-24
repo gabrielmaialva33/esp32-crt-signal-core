@@ -26,6 +26,25 @@ esp_err_t crt_timing_get_profile(crt_video_standard_t standard, crt_timing_profi
             .burst_width = 40,
         };
         return ESP_OK;
+    case CRT_VIDEO_STANDARD_PAL_M:
+        *out_profile = (crt_timing_profile_t){
+            .standard = CRT_VIDEO_STANDARD_PAL_M,
+            .sample_rate_hz = 14302446,
+            .total_lines = 262,
+            .active_start_line = 0,
+            .active_lines = 240,
+            .vsync_start_line = 243,
+            .vsync_line_count = 6,
+            .samples_per_line = 912,
+            .active_offset = 144,
+            .active_width = 768,
+            .sync_width = 64,
+            .vsync_width = 392,
+            .vsync_short_width = 0,
+            .burst_offset = 64,
+            .burst_width = 40,
+        };
+        return ESP_OK;
     case CRT_VIDEO_STANDARD_PAL:
         *out_profile = (crt_timing_profile_t){
             .standard = CRT_VIDEO_STANDARD_PAL,

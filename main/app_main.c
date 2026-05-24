@@ -64,6 +64,20 @@ static bool app_uses_compose_demo(void)
     return !k_use_rgb332_framebuffer && !k_use_stimulus;
 }
 
+static const char *app_video_standard_name(crt_video_standard_t standard)
+{
+    switch (standard) {
+    case CRT_VIDEO_STANDARD_NTSC:
+        return "NTSC-M";
+    case CRT_VIDEO_STANDARD_PAL:
+        return "PAL-B/G";
+    case CRT_VIDEO_STANDARD_PAL_M:
+        return "PAL-M";
+    default:
+        return "unknown";
+    }
+}
+
 /* Demo scene:
  *   layer 0 fused: tile (horizontal scroll per frame)
  *   layer 1 keyed: crt_sprite_layer with bouncing 16x16 sprites
@@ -1173,8 +1187,7 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
     }
 
     ESP_LOGI(TAG, "ESP32 CRT signal core started: standard=%s color=%s pattern=%s",
-             (video_standard == CRT_VIDEO_STANDARD_PAL) ? "PAL" : "NTSC",
-             config.enable_color ? "on" : "off",
+             app_video_standard_name(video_standard), config.enable_color ? "on" : "off",
              k_use_rgb332_framebuffer                                         ? "rgb332_fb"
              : k_use_rgb332_compose                                           ? "rgb332_compose"
              : k_use_stimulus                                                 ? "stimulus"
@@ -1264,11 +1277,11 @@ static void app_run_standard_toggle_loop(crt_video_standard_t video_standard)
         uart_upload_check(&s_fb);
 #endif
         vTaskDelay(pdMS_TO_TICKS((uint32_t)CONFIG_CRT_TEST_STANDARD_TOGGLE_INTERVAL_S * 1000U));
-        video_standard = (video_standard == CRT_VIDEO_STANDARD_PAL) ? CRT_VIDEO_STANDARD_NTSC
-                                                                    : CRT_VIDEO_STANDARD_PAL;
+        video_standard = (video_standard == CRT_VIDEO_STANDARD_NTSC) ? CRT_VIDEO_STANDARD_PAL
+                                                                     : CRT_VIDEO_STANDARD_NTSC;
 
         ESP_LOGI(TAG, "test toggle: switching standard to %s (interval=%" PRIu32 "s)",
-                 (video_standard == CRT_VIDEO_STANDARD_PAL) ? "PAL" : "NTSC",
+                 app_video_standard_name(video_standard),
                  (uint32_t)CONFIG_CRT_TEST_STANDARD_TOGGLE_INTERVAL_S);
 
         err = crt_core_stop();
@@ -1296,6 +1309,8 @@ void app_main(void)
     crt_video_standard_t video_standard =
 #if CONFIG_CRT_VIDEO_STANDARD_PAL
         CRT_VIDEO_STANDARD_PAL;
+#elif CONFIG_CRT_VIDEO_STANDARD_PAL_M
+        CRT_VIDEO_STANDARD_PAL_M;
 #else
         CRT_VIDEO_STANDARD_NTSC;
 #endif

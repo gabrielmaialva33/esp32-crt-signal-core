@@ -2,7 +2,8 @@
 
 #include <assert.h>
 
-static void test_ntsc_apll_coeffs_match_esp_8_bit_reference(void) {
+static void test_ntsc_apll_coeffs_match_esp_8_bit_reference(void)
+{
     crt_hal_apll_coeff_t coeffs = {0};
 
     assert(crt_hal_apll_coeffs_for_sample_rate(14318180, &coeffs));
@@ -14,7 +15,8 @@ static void test_ntsc_apll_coeffs_match_esp_8_bit_reference(void) {
     assert(coeffs.sdm2 == 0x04);
 }
 
-static void test_pal_apll_coeffs_match_esp_8_bit_reference(void) {
+static void test_pal_apll_coeffs_match_esp_8_bit_reference(void)
+{
     crt_hal_apll_coeff_t coeffs = {0};
 
     assert(crt_hal_apll_coeffs_for_sample_rate(17734476, &coeffs));
@@ -26,7 +28,21 @@ static void test_pal_apll_coeffs_match_esp_8_bit_reference(void) {
     assert(coeffs.sdm2 == 0x06);
 }
 
-static void test_unknown_sample_rate_is_rejected(void) {
+static void test_pal_m_apll_coeffs_match_4x_colorburst_rate(void)
+{
+    crt_hal_apll_coeff_t coeffs = {0};
+
+    assert(crt_hal_apll_coeffs_for_sample_rate(14302446, &coeffs));
+    assert(coeffs.sample_rate_hz == 14302446);
+    assert(coeffs.apll_hz == 57209784);
+    assert(coeffs.o_div == 1);
+    assert(coeffs.sdm0 == 0xDB);
+    assert(coeffs.sdm1 == 0x94);
+    assert(coeffs.sdm2 == 0x04);
+}
+
+static void test_unknown_sample_rate_is_rejected(void)
+{
     crt_hal_apll_coeff_t coeffs = {
         .sample_rate_hz = 1,
         .apll_hz = 1,
@@ -41,9 +57,11 @@ static void test_unknown_sample_rate_is_rejected(void) {
     assert(coeffs.apll_hz == 0);
 }
 
-int main(void) {
+int main(void)
+{
     test_ntsc_apll_coeffs_match_esp_8_bit_reference();
     test_pal_apll_coeffs_match_esp_8_bit_reference();
+    test_pal_m_apll_coeffs_match_4x_colorburst_rate();
     test_unknown_sample_rate_is_rejected();
     return 0;
 }

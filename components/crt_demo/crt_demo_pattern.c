@@ -99,7 +99,8 @@ static void crt_demo_pattern_render_color_bars(const crt_demo_pattern_runtime_t 
         return;
     }
 
-    if (ctx->video_standard == CRT_VIDEO_STANDARD_PAL) {
+    if (ctx->video_standard == CRT_VIDEO_STANDARD_PAL ||
+        ctx->video_standard == CRT_VIDEO_STANDARD_PAL_M) {
         palette = ((ctx->line_index & 0x1U) == 0U) ? k_demo_pal_bar_patterns_even
                                                    : k_demo_pal_bar_patterns_odd;
     }
@@ -144,7 +145,7 @@ static bool crt_demo_marker_pixel_for_standard(crt_video_standard_t standard,
     static const uint8_t k_glyph_p[7] = {
         0x1eU, 0x11U, 0x11U, 0x1eU, 0x10U, 0x10U, 0x10U,
     };
-    const uint8_t *glyph = (standard == CRT_VIDEO_STANDARD_PAL) ? k_glyph_p : k_glyph_n;
+    const uint8_t *glyph = (standard == CRT_VIDEO_STANDARD_NTSC) ? k_glyph_n : k_glyph_p;
     const uint16_t y_scale = 2U;
     const uint16_t x_scale = 2U;
     const uint16_t glyph_h = 7U * y_scale;
