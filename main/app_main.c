@@ -110,6 +110,9 @@ static void demo_sprite_atlas_fill(void)
 #define TILE_VISIBLE_W        32u
 #define TILE_VISIBLE_H        30u
 #define TILE_BANK1_LUMA_BOOST 48u
+#define TILE_PRIORITY_ROW0    11u
+#define TILE_PRIORITY_COL0    12u
+#define TILE_PRIORITY_COLS    8u
 static uint8_t s_tile_nametable[TILE_PITCH_W * TILE_PITCH_H];
 static uint8_t s_tile_attrs[TILE_PITCH_W * TILE_PITCH_H];
 static uint8_t s_tile_palette_bank_1[256];
@@ -130,6 +133,10 @@ static void demo_tile_attrs_fill(void)
             if (((row ^ col) & 7U) == 0U) {
                 s_tile_attrs[(size_t)row * TILE_PITCH_W + col] =
                     (uint8_t)(1U << CRT_TILE_ATTR_PALETTE_SHIFT);
+            }
+            if (row == TILE_PRIORITY_ROW0 && col >= TILE_PRIORITY_COL0 &&
+                col < (uint16_t)(TILE_PRIORITY_COL0 + TILE_PRIORITY_COLS)) {
+                s_tile_attrs[(size_t)row * TILE_PITCH_W + col] |= CRT_TILE_ATTR_PRIORITY;
             }
         }
     }
@@ -1131,7 +1138,7 @@ static void app_log_diag_snapshot(void)
     if (app_uses_compose_demo()) {
         ESP_LOGI(TAG,
                  "compose_budget: mode=%s attrs=tile banks=tile scroll=h sprites=%u max/line=%u "
-                 "sprite_attrs=flip+bank active=%ux%u bank1=+%u underruns=%" PRIu32
+                 "sprite_attrs=flip+bank priority=tile active=%ux%u bank1=+%u underruns=%" PRIu32
                  " queue_min=%" PRIu32 " prep_max=%" PRIu32 " cycles",
                  k_use_rgb332_compose ? "rgb332" : "palette", (unsigned)APP_DEMO_SPRITE_COUNT,
                  (unsigned)CRT_SPRITE_DEFAULT_PERLINE, (unsigned)(TILE_VISIBLE_W * CRT_TILE_PX_W),
