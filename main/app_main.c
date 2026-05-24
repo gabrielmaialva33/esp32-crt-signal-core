@@ -2,6 +2,7 @@
 #include "crt_compose_layers.h"
 #include "crt_core.h"
 #include "crt_fb.h"
+#include "crt_ppu.h"
 #include "crt_sprite.h"
 #include "crt_stimulus.h"
 #include "crt_tile.h"
@@ -51,9 +52,8 @@ static const bool k_use_stimulus = CONFIG_CRT_RENDER_MODE_STIMULUS;
 static const bool k_use_stimulus = false;
 #endif
 static crt_fb_surface_t s_fb;
-static crt_compose_t s_compose;
+static crt_ppu_t s_ppu;
 static crt_stimulus_t s_stimulus;
-static crt_tile_layer_t s_tile;
 
 /* Demo scene:
  *   layer 0 fused: tile (horizontal scroll per frame)
@@ -71,7 +71,9 @@ static uint8_t s_checker_layer_idx = CRT_COMPOSE_LAYER_INVALID;
  * out of flash so per-line fetches do not stall on cache misses. */
 DRAM_ATTR static uint8_t s_sprite_atlas_data[64 * 16];
 static crt_sprite_atlas_t s_sprite_atlas;
-static crt_sprite_layer_t s_sprite_layer;
+DRAM_ATTR static uint8_t s_palette_bank_warm[256];
+DRAM_ATTR static uint8_t s_palette_bank_cool[256];
+static crt_compose_palette_banks_t s_palette_banks;
 enum {
     APP_DEMO_SPRITE_COUNT = 3,
 };
@@ -96,11 +98,68 @@ static void demo_sprite_atlas_fill(void)
  * pattern_table lives in rodata via tile_demo.h. 32x32 pitch enables the
  * AND-mask wraparound fast path; 32x30 visible matches NTSC/PAL active
  * lines exactly so the compose hot path lands on the 256->768 expansion. */
-#define TILE_PITCH_W   32u
-#define TILE_PITCH_H   32u
-#define TILE_VISIBLE_W 32u
-#define TILE_VISIBLE_H 30u
+#define TILE_PITCH_W        32u
+#define TILE_PITCH_H        32u
+#define TILE_VISIBLE_W      32u
+#define TILE_VISIBLE_H      30u
+#define TILE_NES_ATTR_PITCH ((TILE_PITCH_W + 3u) / 4u)
+#define TILE_NES_ATTR_H     ((TILE_PITCH_H + 3u) / 4u)
 static uint8_t s_tile_nametable[TILE_PITCH_W * TILE_PITCH_H];
+DRAM_ATTR static uint8_t s_tile_attrs[TILE_PITCH_W * TILE_PITCH_H];
+DRAM_ATTR static uint8_t s_nes_attrs[TILE_NES_ATTR_PITCH * TILE_NES_ATTR_H];
+
+static void demo_palette_banks_fill(void)
+{
+    memset(&s_palette_banks, 0, sizeof(s_palette_banks));
+    for (uint16_t i = 0; i < 256U; ++i) {
+        s_palette_bank_warm[i] = (uint8_t)i;
+        s_palette_bank_cool[i] = (uint8_t)i;
+    }
+
+    s_palette_bank_warm[32] = 0x20;
+    s_palette_bank_warm[64] = 0x60;
+    s_palette_bank_warm[128] = 0xA4;
+    s_palette_bank_warm[160] = 0xC5;
+    s_palette_bank_warm[240] = 0xE6;
+    s_palette_bank_warm[255] = 0xE7;
+
+    s_palette_bank_cool[32] = 0x03;
+    s_palette_bank_cool[64] = 0x07;
+    s_palette_bank_cool[128] = 0x1B;
+    s_palette_bank_cool[160] = 0x2F;
+    s_palette_bank_cool[240] = 0x3F;
+    s_palette_bank_cool[255] = 0xFF;
+
+    s_palette_banks.banks[1] = s_palette_bank_warm;
+    s_palette_banks.banks[2] = s_palette_bank_cool;
+}
+
+static void demo_tile_attrs_fill(void)
+{
+    memset(s_tile_attrs, 0, sizeof(s_tile_attrs));
+    for (uint16_t row = 0; row < TILE_VISIBLE_H; ++row) {
+        for (uint16_t col = 0; col < TILE_VISIBLE_W; ++col) {
+            uint8_t attr = 0;
+            if (((row + col) & 0x07U) == 0U) {
+                attr |= CRT_TILE_ATTR_HFLIP;
+            }
+            if (row >= 10U && row < 20U && col >= 12U && col < 20U) {
+                attr |= CRT_TILE_ATTR_PRIORITY;
+            }
+            s_tile_attrs[(size_t)row * TILE_PITCH_W + col] = attr;
+        }
+    }
+}
+
+static void demo_nes_attrs_fill(void)
+{
+    for (uint16_t row = 0; row < TILE_NES_ATTR_H; ++row) {
+        for (uint16_t col = 0; col < TILE_NES_ATTR_PITCH; ++col) {
+            s_nes_attrs[(size_t)row * TILE_NES_ATTR_PITCH + col] =
+                ((row + col) & 1U) != 0U ? 0xA5U : 0x5AU;
+        }
+    }
+}
 
 #define APP_FB_WIDTH    256
 #define APP_FB_HEIGHT   240
@@ -110,13 +169,13 @@ static uint8_t s_tile_nametable[TILE_PITCH_W * TILE_PITCH_H];
 /* Frame hook: drives runtime animation + mutation API exercises.
  * - Tile horizontal scroll wraps every visible_w*8 pixels.
  * - Each sprite bounces with its own per-frame delta via
- *   crt_sprite_move_by (sprite mutation API). */
+ *   crt_ppu_move_sprite_by (sprite mutation API). */
 IRAM_ATTR static void demo_frame_hook(uint32_t frame, void *user_data)
 {
     (void)user_data;
     (void)frame;
 
-    crt_tile_set_scroll(&s_tile, (int)(frame % (TILE_VISIBLE_W * 8U)), 0);
+    crt_ppu_set_scroll(&s_ppu, (int)(frame % (TILE_VISIBLE_W * 8U)), 0);
 
     /* Sprite world is logical 256x240. Bounce inside
      * [0 .. 256-16] horizontally and [0 .. 240-16] vertically per sprite. */
@@ -127,7 +186,7 @@ IRAM_ATTR static void demo_frame_hook(uint32_t frame, void *user_data)
             continue;
         }
         crt_sprite_t spr;
-        if (crt_sprite_get(&s_sprite_layer, s_sprite_ids[i], &spr) != ESP_OK) {
+        if (crt_sprite_get(&s_ppu.sprites, s_sprite_ids[i], &spr) != ESP_OK) {
             continue;
         }
         int16_t nx = (int16_t)(spr.x + s_dx[i]);
@@ -138,7 +197,7 @@ IRAM_ATTR static void demo_frame_hook(uint32_t frame, void *user_data)
         if (ny <= 0 || ny >= (int16_t)(240 - 16)) {
             s_dy[i] = (int16_t)-s_dy[i];
         }
-        crt_sprite_move_by(&s_sprite_layer, s_sprite_ids[i], s_dx[i], s_dy[i]);
+        crt_ppu_move_sprite_by(&s_ppu, s_sprite_ids[i], s_dx[i], s_dy[i]);
     }
 }
 
@@ -1012,44 +1071,59 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
         /* Tile layer: 32x32 pitch (PoT), 32x30 visible. Pattern from
          * rodata (tile_demo.h); nametable filled in DRAM. */
         tile_demo_fill_nametable(s_tile_nametable, TILE_PITCH_W);
-        esp_err_t tile_err =
-            crt_tile_init(&s_tile, TILE_VISIBLE_W, TILE_VISIBLE_H, TILE_PITCH_W, TILE_PITCH_H,
-                          tile_demo_patterns, TILE_DEMO_COUNT, s_tile_nametable);
-        if (tile_err != ESP_OK) {
-            ESP_LOGE(TAG, "crt_tile_init failed: %s", esp_err_to_name(tile_err));
-            return tile_err;
-        }
-        crt_tile_set_palette(&s_tile, s_fb.palette);
-
-        /* Compositor scene: fused tile base + keyed sprite overlay. */
-        crt_compose_init(&s_compose);
-        crt_compose_set_palette(&s_compose, s_fb.palette, s_fb.palette_size);
-
-        /* Layer 0: tile (fused base, animated horizontal scroll). */
-        crt_compose_add_layer_fused_with_attrs(&s_compose, crt_tile_layer_fetch_with_attrs,
-                                               crt_tile_scanline_hook, &s_tile);
-
-        /* Layer 1: sprite layer (single keyed layer holding the OAM). */
+        demo_tile_attrs_fill();
+        demo_nes_attrs_fill();
+        demo_palette_banks_fill();
         demo_sprite_atlas_fill();
         crt_sprite_atlas_init(&s_sprite_atlas, s_sprite_atlas_data, 64U, 16U, 64U);
-        crt_sprite_layer_init(&s_sprite_layer, &s_sprite_atlas, /* key */ 0);
-        crt_sprite_layer_set_max_sprites_per_line(&s_sprite_layer, CRT_SPRITE_DEFAULT_PERLINE);
+
+        crt_ppu_config_t ppu_config = {
+            .visible_w_tiles = TILE_VISIBLE_W,
+            .visible_h_tiles = TILE_VISIBLE_H,
+            .pitch_w_tiles = TILE_PITCH_W,
+            .pitch_h_tiles = TILE_PITCH_H,
+            .pattern_table = tile_demo_patterns,
+            .pattern_count = TILE_DEMO_COUNT,
+            .nametable = s_tile_nametable,
+            .attributes = s_tile_attrs,
+            .sprite_atlas = &s_sprite_atlas,
+            .sprite_transparent_idx = 0,
+            .max_sprites_per_line = CRT_SPRITE_DEFAULT_PERLINE,
+            .palette = s_fb.palette,
+            .palette_size = s_fb.palette_size,
+            .palette_banks = &s_palette_banks,
+        };
+        esp_err_t ppu_err = crt_ppu_init(&s_ppu, &ppu_config);
+        if (ppu_err != ESP_OK) {
+            ESP_LOGE(TAG, "crt_ppu_init failed: %s", esp_err_to_name(ppu_err));
+            return ppu_err;
+        }
+        ppu_err = crt_ppu_load_nes_attributes(
+            &s_ppu, s_tile_attrs, s_nes_attrs, TILE_NES_ATTR_PITCH,
+            CRT_TILE_ATTR_HFLIP | CRT_TILE_ATTR_VFLIP | CRT_TILE_ATTR_PRIORITY);
+        if (ppu_err != ESP_OK) {
+            ESP_LOGE(TAG, "crt_ppu_load_nes_attributes failed: %s", esp_err_to_name(ppu_err));
+            return ppu_err;
+        }
 
         for (size_t i = 0; i < APP_DEMO_SPRITE_COUNT; ++i) {
             const int16_t spawn_x = (int16_t)(40 + i * 56);
             const int16_t spawn_y = (int16_t)(48 + i * 36); /* 48,84,120,156 — non-overlapping */
-            esp_err_t spr_err = crt_sprite_add(&s_sprite_layer,
-                                               /* cell_x */ (uint16_t)(i * 2U),
-                                               /* cell_y */ 0U, CRT_SPRITE_SIZE_16X16, spawn_x,
-                                               spawn_y, &s_sprite_ids[i]);
+            uint8_t sprite_attr = (uint8_t)(((i % 2U) + 1U) << CRT_SPRITE_ATTR_PALETTE_SHIFT);
+            if (i == 1U) {
+                sprite_attr |= CRT_SPRITE_ATTR_HFLIP;
+            } else if (i == 2U) {
+                sprite_attr |= CRT_SPRITE_ATTR_VFLIP | CRT_SPRITE_ATTR_BG_PRIORITY;
+            }
+            esp_err_t spr_err = crt_ppu_add_sprite(&s_ppu,
+                                                   /* cell_x */ (uint16_t)(i * 2U),
+                                                   /* cell_y */ 0U, CRT_SPRITE_SIZE_16X16, spawn_x,
+                                                   spawn_y, sprite_attr, &s_sprite_ids[i]);
             if (spr_err != ESP_OK) {
                 ESP_LOGW(TAG, "sprite_add %u failed: %s", i, esp_err_to_name(spr_err));
                 s_sprite_ids[i] = CRT_SPRITE_INVALID_ID;
             }
         }
-
-        crt_compose_add_layer_with_attrs(&s_compose, crt_sprite_layer_fetch_with_attrs,
-                                         &s_sprite_layer, /* key */ 0);
 
         /* Reserved primitives (kept declared for the next iteration). */
         (void)s_viewport_god;
@@ -1057,9 +1131,9 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
         (void)s_hud_rect;
         s_checker_layer_idx = CRT_COMPOSE_LAYER_INVALID;
 
-        crt_register_scanline_hook(k_use_rgb332_compose ? crt_compose_scanline_hook_rgb332_256
-                                                        : crt_compose_scanline_hook,
-                                   &s_compose);
+        crt_register_scanline_hook(k_use_rgb332_compose ? crt_ppu_scanline_hook_rgb332_256
+                                                        : crt_ppu_scanline_hook,
+                                   &s_ppu);
         crt_register_frame_hook(demo_frame_hook, NULL);
         ESP_LOGI(TAG, "compose: %s tile %ux%u (h-scroll) + sprite layer (%u sprites, max/line=%u)",
                  k_use_rgb332_compose ? "rgb332" : "palette", TILE_VISIBLE_W, TILE_VISIBLE_H,
@@ -1127,7 +1201,7 @@ static void app_cleanup_core(void)
 #endif
     crt_register_scanline_hook(NULL, NULL);
     crt_register_frame_hook(NULL, NULL);
-    crt_compose_clear_layers(&s_compose);
+    crt_compose_clear_layers(&s_ppu.compose);
     crt_fb_surface_deinit(&s_fb);
 }
 
