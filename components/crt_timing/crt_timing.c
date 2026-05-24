@@ -112,14 +112,14 @@ esp_err_t crt_timing_get_profile(crt_video_standard_t standard, crt_timing_profi
             .active_lines = 240,
             .vsync_start_line = 304,
             .vsync_line_count = 8,
-            .samples_per_line = 1136,
-            .active_offset = 184,
+            .samples_per_line = 918,
+            .active_offset = 150,
             .active_width = 768,
-            .sync_width = 80,
-            .vsync_width = 536,
-            .vsync_short_width = 32,
-            .burst_offset = 96,
-            .burst_width = 44,
+            .sync_width = 68,
+            .vsync_width = 434,
+            .vsync_short_width = 28,
+            .burst_offset = 80,
+            .burst_width = 36,
         };
         return ESP_OK;
     default:

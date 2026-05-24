@@ -78,14 +78,14 @@ static void test_pal_n_profile_uses_625_50_timing_with_pal_n_chroma_clock(void)
     assert(profile.active_lines == 240);
     assert(profile.vsync_start_line == 304);
     assert(profile.vsync_line_count == 8);
-    assert(profile.samples_per_line == 1136);
-    assert(profile.sync_width == 80);
-    assert(profile.vsync_width == 536);
-    assert(profile.vsync_short_width == 32);
-    assert(profile.burst_offset == 96);
-    assert(profile.burst_width == 44);
-    assert(profile.active_offset == 184);
-    assert((uint32_t)profile.active_offset + (uint32_t)profile.active_width <=
+    assert(profile.samples_per_line == 918);
+    assert(profile.sync_width == 68);
+    assert(profile.vsync_width == 434);
+    assert(profile.vsync_short_width == 28);
+    assert(profile.burst_offset == 80);
+    assert(profile.burst_width == 36);
+    assert(profile.active_offset == 150);
+    assert((uint32_t)profile.active_offset + (uint32_t)profile.active_width ==
            (uint32_t)profile.samples_per_line);
 }
 
