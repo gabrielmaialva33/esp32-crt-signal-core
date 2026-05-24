@@ -11,6 +11,7 @@ MONITOR_SECONDS="${MONITOR_SECONDS:-22}"
 MIN_WINDOWS="${MIN_WINDOWS:-2}"
 MAX_COMPOSE_FUSED="${MAX_COMPOSE_FUSED:-90000}"
 COMPOSE_STRESS="${COMPOSE_STRESS:-0}"
+VIDEO_STANDARD="${VIDEO_STANDARD:-NTSC}"
 EXPECT_ACTIVE_SPRITES="${EXPECT_ACTIVE_SPRITES:-}"
 EXPECT_SPRITE_PEAK="${EXPECT_SPRITE_PEAK:-}"
 IDF_EXPORT="${IDF_EXPORT:-$HOME/esp/esp-idf/export.sh}"
@@ -42,11 +43,26 @@ prepare_sdkconfig() {
         "$SDKCONFIG_TMP"
     sed -i -E '/^(# )?CONFIG_CRT_COMPOSE_STRESS_DEMO(=y| is not set)$/d' \
         "$SDKCONFIG_TMP"
+    sed -i -E '/^(# )?CONFIG_CRT_VIDEO_STANDARD_(NTSC|PAL)(=y| is not set)$/d' \
+        "$SDKCONFIG_TMP"
     {
         printf 'CONFIG_CRT_RENDER_MODE_COMPOSE=y\n'
         printf '# CONFIG_CRT_RENDER_MODE_RGB332_FB is not set\n'
         printf '# CONFIG_CRT_RENDER_MODE_RGB332_COMPOSE is not set\n'
         printf '# CONFIG_CRT_RENDER_MODE_STIMULUS is not set\n'
+        case "$VIDEO_STANDARD" in
+            NTSC)
+                printf 'CONFIG_CRT_VIDEO_STANDARD_NTSC=y\n'
+                printf '# CONFIG_CRT_VIDEO_STANDARD_PAL is not set\n'
+                ;;
+            PAL)
+                printf '# CONFIG_CRT_VIDEO_STANDARD_NTSC is not set\n'
+                printf 'CONFIG_CRT_VIDEO_STANDARD_PAL=y\n'
+                ;;
+            *)
+                fail "unsupported VIDEO_STANDARD=${VIDEO_STANDARD}"
+                ;;
+        esac
         if [[ "$COMPOSE_STRESS" == "1" ]]; then
             printf 'CONFIG_CRT_COMPOSE_STRESS_DEMO=y\n'
         else
