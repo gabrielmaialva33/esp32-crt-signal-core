@@ -315,22 +315,24 @@ IRAM_ATTR static bool crt_compose_patch_sprite_spans_256(crt_compose_t *c,
         return true;
     }
 
-    for (uint8_t si = 0; si < span_count; ++si) {
-        if ((spans[si].attr & CRT_COMPOSE_PIXEL_SPRITE_BG_PRIO) != 0u) {
-            return false;
-        }
-    }
-
     const uint8_t key = (uint8_t)sprite_layer->transparent_idx;
     const uint16_t *pal = c->palette;
+    const crt_compose_palette_banks_t *banks = c->palette_banks;
     for (uint8_t si = 0; si < span_count; ++si) {
         const crt_sprite_scanline_span_t *span = &spans[si];
+        if ((span->attr & CRT_COMPOSE_PIXEL_SPRITE_BG_PRIO) != 0u) {
+            continue;
+        }
+        const uint8_t bank_idx =
+            (uint8_t)((span->attr & CRT_COMPOSE_PIXEL_BANK_MASK) >> CRT_COMPOSE_PIXEL_BANK_SHIFT);
+        const uint8_t *bank = (banks != NULL) ? banks->banks[bank_idx] : NULL;
         const uint8_t *src = span->src;
         for (uint8_t sx = 0; sx < span->width; ++sx) {
             const uint8_t sample_idx = *src;
             if (sample_idx != key) {
+                const uint8_t palette_idx = (bank != NULL) ? bank[sample_idx] : sample_idx;
                 crt_compose_patch_expanded_palette_sample(active_buf, (uint16_t)(span->dst_x + sx),
-                                                          pal[sample_idx]);
+                                                          pal[palette_idx]);
             }
             src += span->src_step;
         }
@@ -441,24 +443,29 @@ IRAM_ATTR void crt_compose_scanline_hook(const crt_scanline_t *scanline, uint16_
             keyed_count++;
         }
     }
-    const bool base_fused_eligible = (opaque_count == 1) &&
-                                     (c->layers[base_idx].scanline_override != NULL) &&
-                                     (c->palette_banks == NULL);
+    const bool base_fused_has_override =
+        (opaque_count == 1) && (c->layers[base_idx].scanline_override != NULL);
+    const bool base_fused_eligible = base_fused_has_override && (c->palette_banks == NULL);
 
     /* Fused hot path for the common PPU-style case: one opaque base with
      * scanline_override + exactly one keyed overlay. Collapses
      * fetch + merge + palette + swap into two passes instead of three. */
-    if (base_fused_eligible && keyed_count == 1) {
+    if (base_fused_has_override && keyed_count == 1) {
         const crt_compose_layer_t *base = &c->layers[base_idx];
         const crt_compose_layer_t *keyed = &c->layers[keyed_idx];
 
         if (active_width == CRT_COMPOSITE_RGB332_ACTIVE_WIDTH &&
             logical_width == CRT_COMPOSITE_RGB332_WIDTH &&
-            keyed->fetch_attr == crt_sprite_layer_fetch_with_attrs) {
+            keyed->fetch_attr == crt_sprite_layer_fetch_with_attrs &&
+            (c->palette_banks == NULL || base->fetch_attr == NULL)) {
             base->scanline_override(scanline, active_buf, active_width, base->ctx);
             if (crt_compose_patch_sprite_spans_256(c, keyed, scanline->logical_line, active_buf)) {
                 return;
             }
+        }
+
+        if (!base_fused_eligible) {
+            goto generic_path;
         }
 
         memset(c->attr_scratch, 0, logical_width);
@@ -522,6 +529,7 @@ IRAM_ATTR void crt_compose_scanline_hook(const crt_scanline_t *scanline, uint16_
         }
         /* else: fall through to the palette + word-swap pass below. */
     } else {
+    generic_path:
         /* Generic path (no fused base): composite layers back-to-front.
          *  - Opaque layer writes directly into c->line, skipping memcpy.
          *    When the first enabled layer is opaque we skip the base clear.
