@@ -2,11 +2,12 @@
 # Requires ESP-IDF sourced in shell: . $IDF_PATH/export.sh
 
 PORT ?= /dev/ttyUSB0
+HW_PORT ?= /dev/ttyACM0
 BAUD ?= 115200
 
 # ── Build ────────────────────────────────────────────────────────────
 
-.PHONY: build flash monitor clean menuconfig fullclean
+.PHONY: build flash monitor clean menuconfig fullclean hw-compose-smoke
 
 build:
 	idf.py build
@@ -19,6 +20,9 @@ monitor:
 
 fm: flash monitor  ## Flash + monitor (most common)
 	@true
+
+hw-compose-smoke:  ## Build, flash, and validate COMPOSE diagnostics on ESP32 hardware
+	@PORT="$(HW_PORT)" tools/hw/compose_smoke.sh
 
 clean:
 	idf.py fullclean
