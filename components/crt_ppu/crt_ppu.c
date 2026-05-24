@@ -179,6 +179,18 @@ uint8_t crt_ppu_get_sprite_max_line_rendered(const crt_ppu_t *ppu)
     return (ppu != NULL) ? crt_sprite_layer_get_max_line_rendered(&ppu->sprites) : 0;
 }
 
+void crt_ppu_reset_compose_stats(crt_ppu_t *ppu)
+{
+    if (ppu != NULL) {
+        crt_compose_reset_stats(&ppu->compose);
+    }
+}
+
+crt_compose_stats_t crt_ppu_get_compose_stats(const crt_ppu_t *ppu)
+{
+    return (ppu != NULL) ? crt_compose_get_stats(&ppu->compose) : (crt_compose_stats_t){0};
+}
+
 void crt_ppu_scanline_hook(const crt_scanline_t *scanline, uint16_t *active_buf,
                            uint16_t active_width, void *user_data)
 {

@@ -47,6 +47,18 @@ void crt_compose_set_clear_index(crt_compose_t *c, uint8_t idx)
     }
 }
 
+void crt_compose_reset_stats(crt_compose_t *c)
+{
+    if (c != NULL) {
+        memset(&c->stats, 0, sizeof(c->stats));
+    }
+}
+
+crt_compose_stats_t crt_compose_get_stats(const crt_compose_t *c)
+{
+    return (c != NULL) ? c->stats : (crt_compose_stats_t){0};
+}
+
 /* ── Layer management ─────────────────────────────────────────────── */
 
 static esp_err_t crt_compose_append_layer(crt_compose_t *c, crt_layer_fetch_fn fetch,
@@ -239,6 +251,19 @@ static inline bool crt_compose_layer_has_fetch(const crt_compose_layer_t *layer)
     return layer->fetch != NULL || layer->fetch_attr != NULL;
 }
 
+IRAM_ATTR static void crt_compose_stats_record(crt_compose_t *c, bool materialized,
+                                               uint8_t layers_fetched)
+{
+    if (materialized) {
+        c->stats.materialized_lines++;
+    } else {
+        c->stats.fused_lines++;
+    }
+    if (layers_fetched > c->stats.max_layers_fetched) {
+        c->stats.max_layers_fetched = layers_fetched;
+    }
+}
+
 IRAM_ATTR static bool crt_compose_fetch_layer(const crt_compose_layer_t *layer,
                                               uint16_t logical_line, uint8_t *idx_out,
                                               uint8_t *attr_out, uint16_t width)
@@ -340,10 +365,11 @@ IRAM_ATTR static bool crt_compose_patch_sprite_spans_256(crt_compose_t *c,
     return true;
 }
 
-IRAM_ATTR static void crt_compose_render_indexed_line(crt_compose_t *c, uint16_t logical_line,
-                                                      uint16_t width)
+IRAM_ATTR static uint8_t crt_compose_render_indexed_line(crt_compose_t *c, uint16_t logical_line,
+                                                         uint16_t width)
 {
     bool line_ready = false;
+    uint8_t layers_fetched = 0;
 
     for (uint8_t li = 0; li < c->layer_count; ++li) {
         const crt_compose_layer_t *layer = &c->layers[li];
@@ -353,6 +379,7 @@ IRAM_ATTR static void crt_compose_render_indexed_line(crt_compose_t *c, uint16_t
 
         if (layer->transparent_idx == CRT_COMPOSE_NO_TRANSPARENCY) {
             memset(c->attr_line, 0, width);
+            layers_fetched++;
             (void)crt_compose_fetch_layer(layer, logical_line, c->line, c->attr_line, width);
             line_ready = true;
             continue;
@@ -365,6 +392,7 @@ IRAM_ATTR static void crt_compose_render_indexed_line(crt_compose_t *c, uint16_t
         }
 
         memset(c->attr_scratch, 0, width);
+        layers_fetched++;
         if (!crt_compose_fetch_layer(layer, logical_line, c->scratch, c->attr_scratch, width)) {
             continue;
         }
@@ -379,6 +407,7 @@ IRAM_ATTR static void crt_compose_render_indexed_line(crt_compose_t *c, uint16_t
     }
 
     crt_compose_apply_palette_banks(c, width);
+    return layers_fetched;
 }
 
 IRAM_ATTR static void crt_compose_render_palette_line(const crt_compose_t *c, uint16_t *active_buf,
@@ -419,6 +448,7 @@ IRAM_ATTR void crt_compose_scanline_hook(const crt_scanline_t *scanline, uint16_
 
     const bool expand_256_to_768 = (active_width == CRT_COMPOSITE_RGB332_ACTIVE_WIDTH);
     const uint16_t logical_width = expand_256_to_768 ? CRT_COMPOSITE_RGB332_WIDTH : active_width;
+    uint8_t layers_fetched = 0;
 
     /* Pre-scan: classify the active layer stack for the hot path picker.
      * Two layer counts matter:
@@ -457,8 +487,11 @@ IRAM_ATTR void crt_compose_scanline_hook(const crt_scanline_t *scanline, uint16_
         if (active_width == CRT_COMPOSITE_RGB332_ACTIVE_WIDTH &&
             logical_width == CRT_COMPOSITE_RGB332_WIDTH &&
             keyed->fetch_attr == crt_sprite_layer_fetch_with_attrs) {
+            layers_fetched++;
             base->scanline_override(scanline, active_buf, active_width, base->ctx);
+            layers_fetched++;
             if (crt_compose_patch_sprite_spans_256(c, keyed, scanline->logical_line, active_buf)) {
+                crt_compose_stats_record(c, false, layers_fetched);
                 return;
             }
         }
@@ -468,19 +501,24 @@ IRAM_ATTR void crt_compose_scanline_hook(const crt_scanline_t *scanline, uint16_
         }
 
         memset(c->attr_scratch, 0, logical_width);
+        layers_fetched++;
         if (!crt_compose_fetch_layer(keyed, scanline->logical_line, c->scratch, c->attr_scratch,
                                      logical_width)) {
+            layers_fetched++;
             base->scanline_override(scanline, active_buf, active_width, base->ctx);
+            crt_compose_stats_record(c, false, layers_fetched);
             return;
         }
 
         memset(c->attr_line, 0, logical_width);
+        layers_fetched++;
         (void)crt_compose_fetch_layer(base, scanline->logical_line, c->line, c->attr_line,
                                       logical_width);
 
         const uint8_t key = (uint8_t)keyed->transparent_idx;
         crt_compose_merge_keyed_line(c, logical_width, key);
         crt_compose_render_palette_line(c, active_buf, active_width, logical_width);
+        crt_compose_stats_record(c, true, layers_fetched);
         return;
     }
 
@@ -506,6 +544,7 @@ IRAM_ATTR void crt_compose_scanline_hook(const crt_scanline_t *scanline, uint16_
             }
 
             memset(c->attr_scratch, 0, logical_width);
+            layers_fetched++;
             if (!crt_compose_fetch_layer(layer, scanline->logical_line, c->scratch, c->attr_scratch,
                                          logical_width)) {
                 continue;
@@ -513,6 +552,7 @@ IRAM_ATTR void crt_compose_scanline_hook(const crt_scanline_t *scanline, uint16_
 
             if (!line_materialized) {
                 memset(c->attr_line, 0, logical_width);
+                layers_fetched++;
                 (void)crt_compose_fetch_layer(base, scanline->logical_line, c->line, c->attr_line,
                                               logical_width);
                 line_materialized = true;
@@ -523,7 +563,9 @@ IRAM_ATTR void crt_compose_scanline_hook(const crt_scanline_t *scanline, uint16_
         }
 
         if (!line_materialized) {
+            layers_fetched++;
             base->scanline_override(scanline, active_buf, active_width, base->ctx);
+            crt_compose_stats_record(c, false, layers_fetched);
             return;
         }
         /* else: fall through to the palette + word-swap pass below. */
@@ -543,6 +585,7 @@ IRAM_ATTR void crt_compose_scanline_hook(const crt_scanline_t *scanline, uint16_
 
             if (layer->transparent_idx == CRT_COMPOSE_NO_TRANSPARENCY) {
                 memset(c->attr_line, 0, logical_width);
+                layers_fetched++;
                 (void)crt_compose_fetch_layer(layer, scanline->logical_line, c->line, c->attr_line,
                                               logical_width);
                 line_ready = true;
@@ -556,6 +599,7 @@ IRAM_ATTR void crt_compose_scanline_hook(const crt_scanline_t *scanline, uint16_
             }
 
             memset(c->attr_scratch, 0, logical_width);
+            layers_fetched++;
             if (!crt_compose_fetch_layer(layer, scanline->logical_line, c->scratch, c->attr_scratch,
                                          logical_width)) {
                 continue;
@@ -571,6 +615,7 @@ IRAM_ATTR void crt_compose_scanline_hook(const crt_scanline_t *scanline, uint16_
         }
     }
 
+    crt_compose_stats_record(c, true, layers_fetched);
     crt_compose_apply_palette_banks(c, logical_width);
     crt_compose_render_palette_line(c, active_buf, active_width, logical_width);
 }
@@ -587,7 +632,9 @@ IRAM_ATTR void crt_compose_scanline_hook_rgb332_256(const crt_scanline_t *scanli
         return;
     }
 
-    crt_compose_render_indexed_line(c, scanline->logical_line, CRT_COMPOSITE_RGB332_WIDTH);
+    const uint8_t layers_fetched =
+        crt_compose_render_indexed_line(c, scanline->logical_line, CRT_COMPOSITE_RGB332_WIDTH);
+    crt_compose_stats_record(c, true, layers_fetched);
     crt_composite_rgb332_render_256_to_768(scanline->timing->standard, scanline->physical_line,
                                            c->line, active_buf);
 }

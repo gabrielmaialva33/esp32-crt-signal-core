@@ -983,6 +983,53 @@ static void test_fused_base_plus_present_overlay_materializes(void) {
     printf("  fused base + present overlay materializes: OK\n");
 }
 
+static void test_compose_stats_track_fused_and_materialized_paths(void) {
+    init_linear_palette();
+    reset_mock_counters();
+
+    {
+        crt_compose_t c;
+        crt_compose_init(&c);
+        crt_compose_set_palette(&c, g_palette, 256);
+        assert(crt_compose_add_layer_fused(&c, mock_base_fetch, mock_base_override, NULL) == 0);
+
+        uint16_t buf[4] = {0};
+        crt_scanline_t sc = make_active_line(0);
+        crt_compose_scanline_hook(&sc, buf, 4, &c);
+
+        crt_compose_stats_t stats = crt_compose_get_stats(&c);
+        assert(stats.fused_lines == 1);
+        assert(stats.materialized_lines == 0);
+        assert(stats.max_layers_fetched == 1);
+
+        crt_compose_reset_stats(&c);
+        stats = crt_compose_get_stats(&c);
+        assert(stats.fused_lines == 0);
+        assert(stats.materialized_lines == 0);
+        assert(stats.max_layers_fetched == 0);
+    }
+
+    {
+        crt_compose_t c;
+        crt_compose_init(&c);
+        crt_compose_set_palette(&c, g_palette, 256);
+        assert(crt_compose_add_layer_fused(&c, mock_base_fetch, mock_base_override, NULL) == 0);
+        counting_ctx_t overlay = {.calls = 0, .fill = 99};
+        assert(crt_compose_add_layer(&c, counting_fetch, &overlay, 0) == 0);
+
+        uint16_t buf[4] = {0};
+        crt_scanline_t sc = make_active_line(0);
+        crt_compose_scanline_hook(&sc, buf, 4, &c);
+
+        crt_compose_stats_t stats = crt_compose_get_stats(&c);
+        assert(stats.fused_lines == 0);
+        assert(stats.materialized_lines == 1);
+        assert(stats.max_layers_fetched == 2);
+    }
+
+    printf("  compose stats fused/materialized paths: OK\n");
+}
+
 static void test_fused_base_plus_sprite_patches_256_span(void) {
     init_linear_palette();
     reset_mock_counters();
@@ -1725,6 +1772,7 @@ int main(void) {
     test_fused_base_solo_delegates();
     test_fused_base_plus_absent_overlay_delegates();
     test_fused_base_plus_present_overlay_materializes();
+    test_compose_stats_track_fused_and_materialized_paths();
     test_fused_base_plus_sprite_patches_256_span();
     test_fused_base_plus_bg_priority_sprite_stays_span_path();
     test_fused_base_plus_sprite_palette_bank_stays_span_path();

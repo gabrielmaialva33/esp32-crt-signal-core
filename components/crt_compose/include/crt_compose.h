@@ -73,6 +73,12 @@ typedef struct {
     const uint8_t *banks[CRT_COMPOSE_MAX_PALETTE_BANKS];
 } crt_compose_palette_banks_t;
 
+typedef struct {
+    uint32_t fused_lines;
+    uint32_t materialized_lines;
+    uint8_t max_layers_fetched;
+} crt_compose_stats_t;
+
 /**
  * @brief Layer fetch callback.
  *
@@ -151,6 +157,8 @@ typedef struct {
     /** Optional indexed-8 palette-bank remap tables; NULL means identity. */
     const crt_compose_palette_banks_t *palette_banks;
 
+    crt_compose_stats_t stats;
+
     /** Scratch buffers live inside the struct to avoid stack pressure. */
     uint8_t line[CRT_COMPOSE_MAX_WIDTH];
     uint8_t scratch[CRT_COMPOSE_MAX_WIDTH];
@@ -169,6 +177,10 @@ void crt_compose_set_palette_banks(crt_compose_t *c, const crt_compose_palette_b
 const crt_compose_palette_banks_t *crt_compose_get_palette_banks(const crt_compose_t *c);
 
 void crt_compose_set_clear_index(crt_compose_t *c, uint8_t idx);
+
+void crt_compose_reset_stats(crt_compose_t *c);
+
+crt_compose_stats_t crt_compose_get_stats(const crt_compose_t *c);
 
 /* ── Layer management ─────────────────────────────────────────────── */
 
