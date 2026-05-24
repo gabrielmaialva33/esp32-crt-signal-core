@@ -1,6 +1,7 @@
 #include "crt_timing.h"
 
 #include <assert.h>
+#include <string.h>
 
 static void test_ntsc_profile_matches_legacy_4x_colorburst_timing(void)
 {
@@ -63,6 +64,36 @@ static void test_pal_m_profile_uses_system_m_timing_with_pal_chroma_clock(void)
     assert(profile.active_offset == 144);
     assert((uint32_t)profile.active_offset + (uint32_t)profile.active_width <=
            (uint32_t)profile.samples_per_line);
+}
+
+static void test_standard_info_names_chroma_and_system_family(void)
+{
+    crt_timing_standard_info_t info = {0};
+
+    assert(crt_timing_get_standard_info(CRT_VIDEO_STANDARD_NTSC, &info) == ESP_OK);
+    assert(strcmp(info.name, "NTSC-M") == 0);
+    assert(info.color_subcarrier_hz == 3579545);
+    assert(info.nominal_total_lines == 525);
+    assert(info.field_rate_millihz == 59940);
+    assert(!info.chroma_phase_alternates);
+    assert(info.system_m_timing);
+
+    assert(crt_timing_get_standard_info(CRT_VIDEO_STANDARD_PAL_M, &info) == ESP_OK);
+    assert(strcmp(info.name, "PAL-M") == 0);
+    assert(info.color_subcarrier_hz == 3575611);
+    assert(info.nominal_total_lines == 525);
+    assert(info.field_rate_millihz == 59940);
+    assert(info.chroma_phase_alternates);
+    assert(info.system_m_timing);
+
+    assert(crt_timing_get_standard_info(CRT_VIDEO_STANDARD_PAL, &info) == ESP_OK);
+    assert(strcmp(info.name, "PAL-B/G") == 0);
+    assert(info.color_subcarrier_hz == 4433619);
+    assert(info.nominal_total_lines == 625);
+    assert(info.field_rate_millihz == 50000);
+    assert(info.chroma_phase_alternates);
+    assert(!info.system_m_timing);
+    assert(strcmp(crt_timing_get_standard_name(CRT_VIDEO_STANDARD_PAL_M), "PAL-M") == 0);
 }
 
 static void test_active_line_index_is_timing_owned(void)
@@ -137,6 +168,7 @@ int main(void)
     test_ntsc_profile_matches_legacy_4x_colorburst_timing();
     test_pal_profile_matches_legacy_4x_colorburst_timing();
     test_pal_m_profile_uses_system_m_timing_with_pal_chroma_clock();
+    test_standard_info_names_chroma_and_system_family();
     test_ntsc_vsync_window_is_wide_enough_for_stable_vertical_lock();
     test_active_line_index_is_timing_owned();
     test_pal_vsync_window_is_profile_owned();

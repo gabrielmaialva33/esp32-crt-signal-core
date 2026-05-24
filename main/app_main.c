@@ -64,20 +64,6 @@ static bool app_uses_compose_demo(void)
     return !k_use_rgb332_framebuffer && !k_use_stimulus;
 }
 
-static const char *app_video_standard_name(crt_video_standard_t standard)
-{
-    switch (standard) {
-    case CRT_VIDEO_STANDARD_NTSC:
-        return "NTSC-M";
-    case CRT_VIDEO_STANDARD_PAL:
-        return "PAL-B/G";
-    case CRT_VIDEO_STANDARD_PAL_M:
-        return "PAL-M";
-    default:
-        return "unknown";
-    }
-}
-
 /* Demo scene:
  *   layer 0 fused: tile (horizontal scroll per frame)
  *   layer 1 keyed: crt_sprite_layer with bouncing 16x16 sprites
@@ -1032,6 +1018,8 @@ static void app_ir_ring_task(void *arg)
 
 static esp_err_t app_start_core(crt_video_standard_t video_standard)
 {
+    crt_timing_profile_t timing = {0};
+    crt_timing_standard_info_t standard_info = {0};
     crt_core_config_t config = {
         .video_standard = video_standard,
         .enable_color = k_enable_color || k_use_rgb332_framebuffer || k_use_rgb332_compose,
@@ -1042,6 +1030,17 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
         .min_ready_depth = 0,
         .prep_task_core = 1,
     };
+
+    esp_err_t timing_err = crt_timing_get_profile(video_standard, &timing);
+    if (timing_err != ESP_OK) {
+        ESP_LOGE(TAG, "crt_timing_get_profile failed: %s", esp_err_to_name(timing_err));
+        return timing_err;
+    }
+    timing_err = crt_timing_get_standard_info(video_standard, &standard_info);
+    if (timing_err != ESP_OK) {
+        ESP_LOGE(TAG, "crt_timing_get_standard_info failed: %s", esp_err_to_name(timing_err));
+        return timing_err;
+    }
 
     esp_err_t err = crt_core_init(&config);
     if (err != ESP_OK) {
@@ -1186,13 +1185,17 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
         return err;
     }
 
-    ESP_LOGI(TAG, "ESP32 CRT signal core started: standard=%s color=%s pattern=%s",
-             app_video_standard_name(video_standard), config.enable_color ? "on" : "off",
+    ESP_LOGI(TAG,
+             "ESP32 CRT signal core started: standard=%s color=%s pattern=%s sample=%" PRIu32
+             " subcarrier=%" PRIu32 " chroma=%s",
+             standard_info.name, config.enable_color ? "on" : "off",
              k_use_rgb332_framebuffer                                         ? "rgb332_fb"
              : k_use_rgb332_compose                                           ? "rgb332_compose"
              : k_use_stimulus                                                 ? "stimulus"
              : (config.demo_pattern_mode == CRT_DEMO_PATTERN_COLOR_BARS_RAMP) ? "color_bars_ramp"
-                                                                              : "luma_bars");
+                                                                              : "luma_bars",
+             timing.sample_rate_hz, standard_info.color_subcarrier_hz,
+             standard_info.chroma_phase_alternates ? "alternate" : "fixed");
 
     return ESP_OK;
 }
@@ -1281,7 +1284,7 @@ static void app_run_standard_toggle_loop(crt_video_standard_t video_standard)
                                                                      : CRT_VIDEO_STANDARD_NTSC;
 
         ESP_LOGI(TAG, "test toggle: switching standard to %s (interval=%" PRIu32 "s)",
-                 app_video_standard_name(video_standard),
+                 crt_timing_get_standard_name(video_standard),
                  (uint32_t)CONFIG_CRT_TEST_STANDARD_TOGGLE_INTERVAL_S);
 
         err = crt_core_stop();

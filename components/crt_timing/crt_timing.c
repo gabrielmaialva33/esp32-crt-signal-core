@@ -2,6 +2,36 @@
 
 #include "esp_check.h"
 
+static const crt_timing_standard_info_t k_standard_info[] = {
+    {
+        .standard = CRT_VIDEO_STANDARD_NTSC,
+        .name = "NTSC-M",
+        .color_subcarrier_hz = 3579545,
+        .nominal_total_lines = 525,
+        .field_rate_millihz = 59940,
+        .chroma_phase_alternates = false,
+        .system_m_timing = true,
+    },
+    {
+        .standard = CRT_VIDEO_STANDARD_PAL,
+        .name = "PAL-B/G",
+        .color_subcarrier_hz = 4433619,
+        .nominal_total_lines = 625,
+        .field_rate_millihz = 50000,
+        .chroma_phase_alternates = true,
+        .system_m_timing = false,
+    },
+    {
+        .standard = CRT_VIDEO_STANDARD_PAL_M,
+        .name = "PAL-M",
+        .color_subcarrier_hz = 3575611,
+        .nominal_total_lines = 525,
+        .field_rate_millihz = 59940,
+        .chroma_phase_alternates = true,
+        .system_m_timing = true,
+    },
+};
+
 esp_err_t crt_timing_get_profile(crt_video_standard_t standard, crt_timing_profile_t *out_profile)
 {
     ESP_RETURN_ON_FALSE(out_profile != NULL, ESP_ERR_INVALID_ARG, "crt_timing", "profile is null");
@@ -67,6 +97,33 @@ esp_err_t crt_timing_get_profile(crt_video_standard_t standard, crt_timing_profi
     default:
         return ESP_ERR_NOT_SUPPORTED;
     }
+}
+
+esp_err_t crt_timing_get_standard_info(crt_video_standard_t standard,
+                                       crt_timing_standard_info_t *out_info)
+{
+    ESP_RETURN_ON_FALSE(out_info != NULL, ESP_ERR_INVALID_ARG, "crt_timing",
+                        "standard info is null");
+
+    for (size_t i = 0; i < sizeof(k_standard_info) / sizeof(k_standard_info[0]); ++i) {
+        if (k_standard_info[i].standard == standard) {
+            *out_info = k_standard_info[i];
+            return ESP_OK;
+        }
+    }
+
+    return ESP_ERR_NOT_SUPPORTED;
+}
+
+const char *crt_timing_get_standard_name(crt_video_standard_t standard)
+{
+    crt_timing_standard_info_t info = {0};
+
+    if (crt_timing_get_standard_info(standard, &info) == ESP_OK) {
+        return info.name;
+    }
+
+    return "unknown";
 }
 
 crt_timing_line_type_t crt_timing_get_line_type(crt_video_standard_t standard, uint16_t line_index)

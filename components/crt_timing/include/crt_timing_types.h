@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -35,6 +36,16 @@ typedef struct {
     uint16_t burst_offset;
     uint16_t burst_width;
 } crt_timing_profile_t;
+
+typedef struct {
+    crt_video_standard_t standard;
+    const char *name;
+    uint32_t color_subcarrier_hz;
+    uint16_t nominal_total_lines;
+    uint16_t field_rate_millihz;
+    bool chroma_phase_alternates;
+    bool system_m_timing;
+} crt_timing_standard_info_t;
 
 #ifdef __cplusplus
 }
