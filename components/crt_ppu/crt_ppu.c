@@ -152,6 +152,23 @@ esp_err_t crt_ppu_move_sprite_by(crt_ppu_t *ppu, uint8_t sprite_id, int16_t dx, 
     return crt_sprite_move_by(&ppu->sprites, sprite_id, dx, dy);
 }
 
+void crt_ppu_reset_sprite_stats(crt_ppu_t *ppu)
+{
+    if (ppu != NULL) {
+        crt_sprite_layer_reset_stats(&ppu->sprites);
+    }
+}
+
+uint32_t crt_ppu_get_sprite_overflow_count(const crt_ppu_t *ppu)
+{
+    return (ppu != NULL) ? crt_sprite_layer_get_overflow_count(&ppu->sprites) : 0;
+}
+
+uint8_t crt_ppu_get_sprite_last_line_overflow(const crt_ppu_t *ppu)
+{
+    return (ppu != NULL) ? crt_sprite_layer_get_last_line_overflow(&ppu->sprites) : 0;
+}
+
 void crt_ppu_scanline_hook(const crt_scanline_t *scanline, uint16_t *active_buf,
                            uint16_t active_width, void *user_data)
 {

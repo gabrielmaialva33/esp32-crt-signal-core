@@ -1136,14 +1136,17 @@ static void app_log_diag_snapshot(void)
     ESP_LOGI(TAG, "diag: underruns=%" PRIu32 " queue_min=%" PRIu32 " prep_max=%" PRIu32 " cycles",
              diag.dma_underrun_count, diag.ready_queue_min_depth, diag.prep_cycles_max);
     if (app_uses_compose_demo()) {
-        ESP_LOGI(TAG,
-                 "compose_budget: mode=%s attrs=tile banks=tile scroll=h sprites=%u max/line=%u "
-                 "sprite_attrs=flip+bank priority=tile active=%ux%u bank1=+%u underruns=%" PRIu32
-                 " queue_min=%" PRIu32 " prep_max=%" PRIu32 " cycles",
-                 k_use_rgb332_compose ? "rgb332" : "palette", (unsigned)APP_DEMO_SPRITE_COUNT,
-                 (unsigned)CRT_SPRITE_DEFAULT_PERLINE, (unsigned)(TILE_VISIBLE_W * CRT_TILE_PX_W),
-                 (unsigned)(TILE_VISIBLE_H * CRT_TILE_PX_H), (unsigned)TILE_BANK1_LUMA_BOOST,
-                 diag.dma_underrun_count, diag.ready_queue_min_depth, diag.prep_cycles_max);
+        const uint32_t sprite_overflow = crt_ppu_get_sprite_overflow_count(&s_ppu);
+        ESP_LOGI(
+            TAG,
+            "compose_budget: mode=%s attrs=tile banks=tile scroll=h sprites=%u max/line=%u "
+            "sprite_attrs=flip+bank priority=tile active=%ux%u bank1=+%u sprite_overflow=%" PRIu32
+            " underruns=%" PRIu32 " queue_min=%" PRIu32 " prep_max=%" PRIu32 " cycles",
+            k_use_rgb332_compose ? "rgb332" : "palette", (unsigned)APP_DEMO_SPRITE_COUNT,
+            (unsigned)CRT_SPRITE_DEFAULT_PERLINE, (unsigned)(TILE_VISIBLE_W * CRT_TILE_PX_W),
+            (unsigned)(TILE_VISIBLE_H * CRT_TILE_PX_H), (unsigned)TILE_BANK1_LUMA_BOOST,
+            sprite_overflow, diag.dma_underrun_count, diag.ready_queue_min_depth,
+            diag.prep_cycles_max);
     }
 }
 

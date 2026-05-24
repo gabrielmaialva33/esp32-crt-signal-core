@@ -66,6 +66,12 @@ esp_err_t crt_ppu_set_sprite_position(crt_ppu_t *ppu, uint8_t sprite_id, int16_t
 
 esp_err_t crt_ppu_move_sprite_by(crt_ppu_t *ppu, uint8_t sprite_id, int16_t dx, int16_t dy);
 
+void crt_ppu_reset_sprite_stats(crt_ppu_t *ppu);
+
+uint32_t crt_ppu_get_sprite_overflow_count(const crt_ppu_t *ppu);
+
+uint8_t crt_ppu_get_sprite_last_line_overflow(const crt_ppu_t *ppu);
+
 void crt_ppu_scanline_hook(const crt_scanline_t *scanline, uint16_t *active_buf,
                            uint16_t active_width, void *user_data);
 
