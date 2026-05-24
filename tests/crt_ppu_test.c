@@ -229,12 +229,43 @@ static void test_sprite_overflow_stats(void) {
     printf("  sprite overflow stats: OK\n");
 }
 
+static void test_sprite_peak_stats(void) {
+    crt_ppu_t ppu;
+    crt_sprite_atlas_t atlas;
+    init_palette();
+    init_assets(&atlas);
+    crt_ppu_config_t config = make_config(&atlas);
+    config.max_sprites_per_line = 8;
+    assert(crt_ppu_init(&ppu, &config) == 0);
+
+    for (uint8_t i = 0; i < 3; ++i) {
+        uint8_t sprite_id = CRT_SPRITE_INVALID_ID;
+        assert(crt_ppu_add_sprite(&ppu, 0, 0, CRT_SPRITE_SIZE_8X8, (int16_t)(2 + i * 4), 0, 0,
+                                  &sprite_id) == 0);
+        assert(sprite_id == i);
+    }
+
+    crt_scanline_t sc = make_active_line(0);
+    uint16_t pal_buf[CRT_COMPOSITE_RGB332_WIDTH] = {0};
+    crt_ppu_scanline_hook(&sc, pal_buf, CRT_COMPOSITE_RGB332_WIDTH, &ppu);
+
+    assert(crt_ppu_get_sprite_overflow_count(&ppu) == 0);
+    assert(crt_ppu_get_sprite_max_line_considered(&ppu) == 3);
+    assert(crt_ppu_get_sprite_max_line_rendered(&ppu) == 3);
+
+    crt_ppu_reset_sprite_stats(&ppu);
+    assert(crt_ppu_get_sprite_max_line_considered(&ppu) == 0);
+    assert(crt_ppu_get_sprite_max_line_rendered(&ppu) == 0);
+    printf("  sprite peak stats: OK\n");
+}
+
 int main(void) {
     printf("crt_ppu test\n");
     test_init_validation();
     test_nes_attribute_expansion();
     test_tile_attr_sprite_and_hooks();
     test_sprite_overflow_stats();
+    test_sprite_peak_stats();
     printf("ALL PASSED\n");
     return 0;
 }

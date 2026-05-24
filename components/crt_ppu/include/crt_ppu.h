@@ -72,6 +72,10 @@ uint32_t crt_ppu_get_sprite_overflow_count(const crt_ppu_t *ppu);
 
 uint8_t crt_ppu_get_sprite_last_line_overflow(const crt_ppu_t *ppu);
 
+uint8_t crt_ppu_get_sprite_max_line_considered(const crt_ppu_t *ppu);
+
+uint8_t crt_ppu_get_sprite_max_line_rendered(const crt_ppu_t *ppu);
+
 void crt_ppu_scanline_hook(const crt_scanline_t *scanline, uint16_t *active_buf,
                            uint16_t active_width, void *user_data);
 

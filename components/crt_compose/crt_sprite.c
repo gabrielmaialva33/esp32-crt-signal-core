@@ -89,6 +89,8 @@ void crt_sprite_layer_reset_stats(crt_sprite_layer_t *layer)
 {
     if (layer != NULL) {
         layer->overflow_count = 0;
+        layer->max_line_considered = 0;
+        layer->max_line_rendered = 0;
         layer->last_line_considered = 0;
         layer->last_line_rendered = 0;
         layer->last_line_overflow = 0;
@@ -103,6 +105,16 @@ uint32_t crt_sprite_layer_get_overflow_count(const crt_sprite_layer_t *layer)
 uint8_t crt_sprite_layer_get_last_line_overflow(const crt_sprite_layer_t *layer)
 {
     return (layer != NULL) ? layer->last_line_overflow : 0;
+}
+
+uint8_t crt_sprite_layer_get_max_line_considered(const crt_sprite_layer_t *layer)
+{
+    return (layer != NULL) ? layer->max_line_considered : 0;
+}
+
+uint8_t crt_sprite_layer_get_max_line_rendered(const crt_sprite_layer_t *layer)
+{
+    return (layer != NULL) ? layer->max_line_rendered : 0;
 }
 
 esp_err_t crt_sprite_add(crt_sprite_layer_t *layer, uint16_t cell_x, uint16_t cell_y,
@@ -355,6 +367,12 @@ IRAM_ATTR bool crt_sprite_layer_fetch_with_attrs(void *ctx, uint16_t logical_lin
     if (layer->last_line_overflow > 0) {
         layer->overflow_count += layer->last_line_overflow;
     }
+    if (layer->last_line_considered > layer->max_line_considered) {
+        layer->max_line_considered = layer->last_line_considered;
+    }
+    if (layer->last_line_rendered > layer->max_line_rendered) {
+        layer->max_line_rendered = layer->last_line_rendered;
+    }
     return layer->last_line_rendered > 0;
 }
 
@@ -441,6 +459,12 @@ IRAM_ATTR uint8_t crt_sprite_layer_collect_scanline(crt_sprite_layer_t *layer,
 
     if (layer->last_line_overflow > 0) {
         layer->overflow_count += layer->last_line_overflow;
+    }
+    if (layer->last_line_considered > layer->max_line_considered) {
+        layer->max_line_considered = layer->last_line_considered;
+    }
+    if (layer->last_line_rendered > layer->max_line_rendered) {
+        layer->max_line_rendered = layer->last_line_rendered;
     }
     return span_count;
 }

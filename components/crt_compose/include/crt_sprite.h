@@ -59,6 +59,8 @@ typedef struct {
     uint8_t x_scale;
     uint8_t transparent_idx;
     uint32_t overflow_count;
+    uint8_t max_line_considered;
+    uint8_t max_line_rendered;
     uint8_t last_line_considered;
     uint8_t last_line_rendered;
     uint8_t last_line_overflow;
@@ -88,6 +90,10 @@ void crt_sprite_layer_reset_stats(crt_sprite_layer_t *layer);
 uint32_t crt_sprite_layer_get_overflow_count(const crt_sprite_layer_t *layer);
 
 uint8_t crt_sprite_layer_get_last_line_overflow(const crt_sprite_layer_t *layer);
+
+uint8_t crt_sprite_layer_get_max_line_considered(const crt_sprite_layer_t *layer);
+
+uint8_t crt_sprite_layer_get_max_line_rendered(const crt_sprite_layer_t *layer);
 
 esp_err_t crt_sprite_add(crt_sprite_layer_t *layer, uint16_t cell_x, uint16_t cell_y,
                          crt_sprite_size_t size, int16_t x, int16_t y, uint8_t *out_sprite_id);
