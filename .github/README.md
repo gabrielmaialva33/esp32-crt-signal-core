@@ -125,7 +125,7 @@ flowchart LR
 | **`crt_timing`**           | NTSC/PAL timing profiles                | µs-precise blanking/sync tables  |
 | **`crt_demo`**             | Test pattern generator                  | Color bars, ramps, grids         |
 | **`crt_diag`**             | Runtime telemetry                       | Late line detection, ISR stats   |
-| **`crt_fb`**               | Indexed-8 / RGB332 framebuffer adapters | Hook-based active video source   |
+| **`crt_fb`**               | Indexed-8 / RGB332 framebuffer + drawing | Hook-based active video source   |
 | **`crt_compose`**          | Indexed-8 scanline compositor           | Z-order + keyed transparency     |
 | └─ `crt_sprite`            | Atlas-backed OAM sprite layer           | Per-scanline sprite cap          |
 | **`crt_stimulus`**         | Measurement stimulus layer              | Deterministic capture patterns   |

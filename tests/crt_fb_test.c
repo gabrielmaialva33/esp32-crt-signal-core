@@ -19,7 +19,8 @@
 
 /* ── Surface lifecycle ────────────────────────────────────────────── */
 
-static void test_init_alloc_free(void) {
+static void test_init_alloc_free(void)
+{
     crt_fb_surface_t s;
     assert(crt_fb_surface_init(&s, 64, 48, CRT_FB_FORMAT_INDEXED8) == 0);
     assert(s.width == 64);
@@ -46,7 +47,8 @@ static void test_init_alloc_free(void) {
 
 /* ── Pixel access ─────────────────────────────────────────────────── */
 
-static void test_pixel_access(void) {
+static void test_pixel_access(void)
+{
     crt_fb_surface_t s;
     crt_fb_surface_init(&s, 16, 8, CRT_FB_FORMAT_INDEXED8);
     crt_fb_surface_alloc(&s);
@@ -78,9 +80,51 @@ static void test_pixel_access(void) {
     printf("  pixel access: OK\n");
 }
 
+static void test_draw_primitives_clip_to_surface(void)
+{
+    crt_fb_surface_t s;
+    crt_fb_surface_init(&s, 8, 6, CRT_FB_FORMAT_INDEXED8);
+    crt_fb_surface_alloc(&s);
+
+    crt_fb_hline(&s, 6, 1, 8, 0x11);
+    assert(crt_fb_get(&s, 5, 1) == 0);
+    assert(crt_fb_get(&s, 6, 1) == 0x11);
+    assert(crt_fb_get(&s, 7, 1) == 0x11);
+
+    crt_fb_vline(&s, 2, 4, 8, 0x22);
+    assert(crt_fb_get(&s, 2, 3) == 0);
+    assert(crt_fb_get(&s, 2, 4) == 0x22);
+    assert(crt_fb_get(&s, 2, 5) == 0x22);
+
+    crt_fb_fill_rect(&s, 5, 3, 8, 8, 0x33);
+    assert(crt_fb_get(&s, 4, 3) == 0);
+    assert(crt_fb_get(&s, 5, 3) == 0x33);
+    assert(crt_fb_get(&s, 7, 5) == 0x33);
+
+    crt_fb_rect(&s, 1, 1, 4, 3, 0x44);
+    assert(crt_fb_get(&s, 1, 1) == 0x44);
+    assert(crt_fb_get(&s, 4, 1) == 0x44);
+    assert(crt_fb_get(&s, 1, 3) == 0x44);
+    assert(crt_fb_get(&s, 4, 3) == 0x44);
+    assert(crt_fb_get(&s, 2, 2) == 0);
+
+    crt_fb_hline(&s, 0, 0, 0, 0x55);
+    crt_fb_vline(&s, 0, 0, 0, 0x55);
+    crt_fb_fill_rect(&s, 0, 0, 0, 4, 0x55);
+    crt_fb_rect(&s, 0, 0, 4, 0, 0x55);
+    assert(crt_fb_get(&s, 0, 0) == 0);
+
+    crt_fb_rect(&s, 0, UINT16_MAX, 4, 2, 0x66);
+    assert(crt_fb_get(&s, 0, 0) == 0);
+
+    crt_fb_surface_deinit(&s);
+    printf("  draw primitives: OK\n");
+}
+
 /* ── Palette ──────────────────────────────────────────────────────── */
 
-static void test_palette_grayscale(void) {
+static void test_palette_grayscale(void)
+{
     crt_fb_surface_t s;
     crt_fb_surface_init(&s, 4, 4, CRT_FB_FORMAT_INDEXED8);
     crt_fb_surface_alloc(&s);
@@ -105,7 +149,8 @@ static void test_palette_grayscale(void) {
 
 /* ── Scanline hook ────────────────────────────────────────────────── */
 
-static void test_layer_fetch_adapter(void) {
+static void test_layer_fetch_adapter(void)
+{
     crt_fb_surface_t s;
     crt_fb_surface_init(&s, 4, 2, CRT_FB_FORMAT_INDEXED8);
     crt_fb_surface_alloc(&s);
@@ -142,7 +187,8 @@ static void test_layer_fetch_adapter(void) {
     printf("  layer fetch adapter: OK\n");
 }
 
-static void test_scanline_hook(void) {
+static void test_scanline_hook(void)
+{
     crt_fb_surface_t s;
     crt_fb_surface_init(&s, 4, 4, CRT_FB_FORMAT_INDEXED8);
     crt_fb_surface_alloc(&s);
@@ -208,7 +254,8 @@ static void test_scanline_hook(void) {
     printf("  scanline hook: OK\n");
 }
 
-static void test_rgb332_scanline_hook(void) {
+static void test_rgb332_scanline_hook(void)
+{
     crt_fb_surface_t s;
     crt_fb_surface_init(&s, 256, 4, CRT_FB_FORMAT_INDEXED8);
     crt_fb_surface_alloc(&s);
@@ -250,10 +297,12 @@ static void test_rgb332_scanline_hook(void) {
 
 /* ── Main ─────────────────────────────────────────────────────────── */
 
-int main(void) {
+int main(void)
+{
     printf("crt_fb test\n");
     test_init_alloc_free();
     test_pixel_access();
+    test_draw_primitives_clip_to_surface();
     test_palette_grayscale();
     test_layer_fetch_adapter();
     test_scanline_hook();

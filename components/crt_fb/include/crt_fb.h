@@ -47,6 +47,17 @@ uint8_t crt_fb_get(const crt_fb_surface_t *surface, uint16_t x, uint16_t y);
 
 void crt_fb_clear(crt_fb_surface_t *surface, uint8_t value);
 
+void crt_fb_hline(crt_fb_surface_t *surface, uint16_t x, uint16_t y, uint16_t width, uint8_t value);
+
+void crt_fb_vline(crt_fb_surface_t *surface, uint16_t x, uint16_t y, uint16_t height,
+                  uint8_t value);
+
+void crt_fb_rect(crt_fb_surface_t *surface, uint16_t x, uint16_t y, uint16_t width, uint16_t height,
+                 uint8_t value);
+
+void crt_fb_fill_rect(crt_fb_surface_t *surface, uint16_t x, uint16_t y, uint16_t width,
+                      uint16_t height, uint8_t value);
+
 /* ── Palette ──────────────────────────────────────────────────────── */
 
 void crt_fb_palette_set(crt_fb_surface_t *surface, uint8_t index, uint16_t dac_level);

@@ -128,6 +128,87 @@ void crt_fb_clear(crt_fb_surface_t *surface, uint8_t value)
     }
 }
 
+void crt_fb_hline(crt_fb_surface_t *surface, uint16_t x, uint16_t y, uint16_t width, uint8_t value)
+{
+    if (surface == NULL || surface->buffer == NULL || width == 0 || y >= surface->height ||
+        x >= surface->width) {
+        return;
+    }
+
+    uint16_t clipped_width = width;
+    if ((uint32_t)x + clipped_width > surface->width) {
+        clipped_width = (uint16_t)(surface->width - x);
+    }
+    memset(&surface->buffer[(size_t)y * surface->width + x], value, clipped_width);
+}
+
+void crt_fb_vline(crt_fb_surface_t *surface, uint16_t x, uint16_t y, uint16_t height, uint8_t value)
+{
+    if (surface == NULL || surface->buffer == NULL || height == 0 || x >= surface->width ||
+        y >= surface->height) {
+        return;
+    }
+
+    uint16_t clipped_height = height;
+    if ((uint32_t)y + clipped_height > surface->height) {
+        clipped_height = (uint16_t)(surface->height - y);
+    }
+    for (uint16_t row = 0; row < clipped_height; ++row) {
+        surface->buffer[(size_t)(y + row) * surface->width + x] = value;
+    }
+}
+
+void crt_fb_fill_rect(crt_fb_surface_t *surface, uint16_t x, uint16_t y, uint16_t width,
+                      uint16_t height, uint8_t value)
+{
+    if (surface == NULL || surface->buffer == NULL || width == 0 || height == 0 ||
+        x >= surface->width || y >= surface->height) {
+        return;
+    }
+
+    uint16_t clipped_width = width;
+    uint16_t clipped_height = height;
+    if ((uint32_t)x + clipped_width > surface->width) {
+        clipped_width = (uint16_t)(surface->width - x);
+    }
+    if ((uint32_t)y + clipped_height > surface->height) {
+        clipped_height = (uint16_t)(surface->height - y);
+    }
+    for (uint16_t row = 0; row < clipped_height; ++row) {
+        memset(&surface->buffer[(size_t)(y + row) * surface->width + x], value, clipped_width);
+    }
+}
+
+void crt_fb_rect(crt_fb_surface_t *surface, uint16_t x, uint16_t y, uint16_t width, uint16_t height,
+                 uint8_t value)
+{
+    if (surface == NULL || surface->buffer == NULL || width == 0 || height == 0 ||
+        x >= surface->width || y >= surface->height) {
+        return;
+    }
+
+    uint16_t clipped_width = width;
+    uint16_t clipped_height = height;
+    if ((uint32_t)x + clipped_width > surface->width) {
+        clipped_width = (uint16_t)(surface->width - x);
+    }
+    if ((uint32_t)y + clipped_height > surface->height) {
+        clipped_height = (uint16_t)(surface->height - y);
+    }
+
+    crt_fb_hline(surface, x, y, clipped_width, value);
+    if (clipped_height > 1) {
+        crt_fb_hline(surface, x, (uint16_t)(y + clipped_height - 1U), clipped_width, value);
+    }
+    if (clipped_height > 2) {
+        crt_fb_vline(surface, x, (uint16_t)(y + 1U), (uint16_t)(clipped_height - 2U), value);
+        if (clipped_width > 1) {
+            crt_fb_vline(surface, (uint16_t)(x + clipped_width - 1U), (uint16_t)(y + 1U),
+                         (uint16_t)(clipped_height - 2U), value);
+        }
+    }
+}
+
 /* ── Palette ──────────────────────────────────────────────────────── */
 
 void crt_fb_palette_set(crt_fb_surface_t *surface, uint8_t index, uint16_t dac_level)
