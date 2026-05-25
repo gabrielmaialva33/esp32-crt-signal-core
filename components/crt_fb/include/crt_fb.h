@@ -58,6 +58,12 @@ void crt_fb_rect(crt_fb_surface_t *surface, uint16_t x, uint16_t y, uint16_t wid
 void crt_fb_fill_rect(crt_fb_surface_t *surface, uint16_t x, uint16_t y, uint16_t width,
                       uint16_t height, uint8_t value);
 
+void crt_fb_draw_char_5x7(crt_fb_surface_t *surface, uint16_t x, uint16_t y, char ch, uint8_t value,
+                          uint8_t scale);
+
+void crt_fb_draw_text_5x7(crt_fb_surface_t *surface, uint16_t x, uint16_t y, const char *text,
+                          uint8_t value, uint8_t scale);
+
 /* ── Palette ──────────────────────────────────────────────────────── */
 
 void crt_fb_palette_set(crt_fb_surface_t *surface, uint8_t index, uint16_t dac_level);

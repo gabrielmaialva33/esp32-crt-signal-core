@@ -121,6 +121,41 @@ static void test_draw_primitives_clip_to_surface(void)
     printf("  draw primitives: OK\n");
 }
 
+static void test_draw_text_5x7_clips_and_scales(void)
+{
+    crt_fb_surface_t s;
+    crt_fb_surface_init(&s, 24, 14, CRT_FB_FORMAT_INDEXED8);
+    crt_fb_surface_alloc(&s);
+
+    crt_fb_draw_char_5x7(&s, 0, 0, 'A', 0x77, 1);
+    assert(crt_fb_get(&s, 0, 0) == 0);
+    assert(crt_fb_get(&s, 1, 0) == 0x77);
+    assert(crt_fb_get(&s, 2, 0) == 0x77);
+    assert(crt_fb_get(&s, 3, 0) == 0x77);
+    assert(crt_fb_get(&s, 4, 0) == 0);
+    assert(crt_fb_get(&s, 0, 3) == 0x77);
+    assert(crt_fb_get(&s, 4, 3) == 0x77);
+    assert(crt_fb_get(&s, 0, 6) == 0x77);
+
+    crt_fb_draw_text_5x7(&s, 0, 8, "I", 0x55, 2);
+    assert(crt_fb_get(&s, 0, 8) == 0x55);
+    assert(crt_fb_get(&s, 1, 8) == 0x55);
+    assert(crt_fb_get(&s, 8, 8) == 0x55);
+    assert(crt_fb_get(&s, 9, 8) == 0x55);
+    assert(crt_fb_get(&s, 4, 12) == 0x55);
+    assert(crt_fb_get(&s, 5, 12) == 0x55);
+
+    crt_fb_draw_text_5x7(&s, 22, 12, "A", 0x33, 1);
+    assert(crt_fb_get(&s, 23, 12) == 0x33);
+
+    crt_fb_draw_char_5x7(&s, 0, 0, 'Z', 0x99, 0);
+    crt_fb_draw_text_5x7(&s, 0, 0, NULL, 0x99, 1);
+    assert(crt_fb_get(&s, 1, 0) == 0x77);
+
+    crt_fb_surface_deinit(&s);
+    printf("  text 5x7: OK\n");
+}
+
 /* ── Palette ──────────────────────────────────────────────────────── */
 
 static void test_palette_grayscale(void)
@@ -303,6 +338,7 @@ int main(void)
     test_init_alloc_free();
     test_pixel_access();
     test_draw_primitives_clip_to_surface();
+    test_draw_text_5x7_clips_and_scales();
     test_palette_grayscale();
     test_layer_fetch_adapter();
     test_scanline_hook();
