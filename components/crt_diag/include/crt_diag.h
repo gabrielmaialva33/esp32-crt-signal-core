@@ -14,6 +14,8 @@ typedef struct {
 
 void crt_diag_reset(void);
 
+void crt_diag_reset_window(void);
+
 void crt_diag_get_snapshot(crt_diag_snapshot_t *out_snapshot);
 
 void crt_diag_set_dma_underrun_count(uint32_t dma_underrun_count);

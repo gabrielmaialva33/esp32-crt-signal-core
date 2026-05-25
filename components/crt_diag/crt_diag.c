@@ -9,6 +9,12 @@ void crt_diag_reset(void)
     memset(&s_snapshot, 0, sizeof(s_snapshot));
 }
 
+void crt_diag_reset_window(void)
+{
+    s_snapshot.ready_queue_min_depth = 0;
+    s_snapshot.prep_cycles_max = 0;
+}
+
 void crt_diag_get_snapshot(crt_diag_snapshot_t *out_snapshot)
 {
     if (out_snapshot == NULL) {

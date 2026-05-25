@@ -542,6 +542,14 @@ esp_err_t crt_core_get_diag_snapshot(crt_diag_snapshot_t *out_snapshot)
     return ESP_OK;
 }
 
+esp_err_t crt_core_reset_diag_window(void)
+{
+    ESP_RETURN_ON_FALSE(s_initialized, ESP_ERR_INVALID_STATE, "crt_core", "not initialized");
+
+    crt_diag_reset_window();
+    return ESP_OK;
+}
+
 /* ── Hook registration ────────────────────────────────────────────── */
 
 esp_err_t crt_register_frame_hook(crt_frame_hook_fn hook, void *user_data)

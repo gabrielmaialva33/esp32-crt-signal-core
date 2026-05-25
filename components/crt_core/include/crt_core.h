@@ -32,6 +32,8 @@ esp_err_t crt_core_deinit(void);
 
 esp_err_t crt_core_get_diag_snapshot(crt_diag_snapshot_t *out_snapshot);
 
+esp_err_t crt_core_reset_diag_window(void);
+
 #ifdef __cplusplus
 }
 #endif

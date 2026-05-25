@@ -365,6 +365,7 @@ make test
 # Focused groups for faster iteration
 make test-core
 make test-render
+make test-diag
 ```
 
 ---
@@ -373,7 +374,7 @@ make test-render
 
 | Metric                 |           Value |
 |:-----------------------|----------------:|
-| **Host test programs** |              12 |
+| **Host test programs** |              13 |
 | **Components**         |               9 |
 | **DMA channels**       | I2S0 continuous |
 | **DAC resolution**     |           8-bit |

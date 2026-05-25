@@ -86,6 +86,7 @@ TEST_CC     ?= gcc
 TEST_CFLAGS ?= -Wall -Wextra -Wno-unused-function -std=c11 -g
 TEST_INC    := -I tests/stubs \
                -I components/crt_core/include \
+               -I components/crt_diag/include \
                -I components/crt_timing/include \
                -I components/crt_demo/include \
                -I components/crt_fb/include \
@@ -98,6 +99,7 @@ TEST_OUT    := /tmp
 LINT_SOURCES := components/crt_core/crt_waveform.c \
                 components/crt_core/crt_line_policy.c \
                 components/crt_core/crt_composite_palette.c \
+                components/crt_diag/crt_diag.c \
                 components/crt_hal/crt_hal_clock.c \
                 components/crt_timing/crt_timing.c \
                 components/crt_demo/crt_demo_pattern.c \
@@ -109,14 +111,14 @@ LINT_SOURCES := components/crt_core/crt_waveform.c \
                 components/crt_ppu/crt_ppu.c \
                 components/crt_stimulus/crt_stimulus.c
 
-.PHONY: test test-core test-render test-burst test-policy test-timing test-demo test-hal-clock \
+.PHONY: test test-core test-render test-burst test-policy test-timing test-demo test-diag test-hal-clock \
         test-composite-palette test-scanline-abi test-scanline-header test-fb test-compose \
         test-stimulus test-tile test-ppu
 
 test: test-core test-render  ## Run all host tests
 	@echo "\n✓ All tests passed"
 
-test-core: test-burst test-policy test-timing test-demo test-hal-clock test-composite-palette test-scanline-abi test-scanline-header  ## Run core host tests
+test-core: test-burst test-policy test-timing test-demo test-diag test-hal-clock test-composite-palette test-scanline-abi test-scanline-header  ## Run core host tests
 	@echo "\n✓ Core tests passed"
 
 test-render: test-fb test-compose test-stimulus test-tile test-ppu  ## Run render adapter host tests
@@ -142,6 +144,11 @@ test-demo:
 		tests/crt_demo_pattern_test.c components/crt_demo/crt_demo_pattern.c \
 		components/crt_core/crt_waveform.c -lm \
 		-o $(TEST_OUT)/demo_test && $(TEST_OUT)/demo_test
+
+test-diag:
+	@$(TEST_CC) $(TEST_CFLAGS) $(TEST_INC) \
+		tests/crt_diag_test.c components/crt_diag/crt_diag.c \
+		-o $(TEST_OUT)/crt_diag_test && $(TEST_OUT)/crt_diag_test
 
 test-hal-clock:
 	@$(TEST_CC) $(TEST_CFLAGS) $(TEST_INC) \

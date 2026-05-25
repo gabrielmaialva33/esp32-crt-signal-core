@@ -72,6 +72,10 @@ gcc -I components/crt_hal/include \
     tests/crt_hal_clock_test.c components/crt_hal/crt_hal_clock.c \
     -o /tmp/crt_hal_clock_test && /tmp/crt_hal_clock_test
 
+gcc -I components/crt_diag/include \
+    tests/crt_diag_test.c components/crt_diag/crt_diag.c \
+    -o /tmp/crt_diag_test && /tmp/crt_diag_test
+
 gcc -I components/crt_core/include -I components/crt_timing/include \
     -I tests/stubs tests/crt_composite_palette_test.c \
     components/crt_core/crt_composite_palette.c \
@@ -128,6 +132,7 @@ make lint-py
 - Changes under `components/crt_core/crt_waveform.c`: run `burst_waveform_test` and `crt_demo_pattern_test`
 - Changes under `components/crt_core/crt_line_policy.c`: run `line_policy_test`
 - Changes under `components/crt_core/crt_composite_palette.c`: run `crt_composite_palette_test` and `crt_fb_test`
+- Changes under `components/crt_diag/`: run `crt_diag_test`
 - Changes under `components/crt_hal/crt_hal_clock.c`: run `crt_hal_clock_test` and `idf.py build`
 - Changes under `components/crt_core/include/crt_scanline.h` or hook ABI: run `crt_scanline_abi_test` and `crt_scanline_header_test`
 - Changes under `components/crt_fb/`: run `crt_fb_test`

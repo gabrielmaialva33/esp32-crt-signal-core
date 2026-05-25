@@ -708,6 +708,7 @@ static void app_log_diag_snapshot(void)
         crt_ppu_reset_compose_stats(&s_ppu);
         crt_ppu_reset_sprite_stats(&s_ppu);
     }
+    (void)crt_core_reset_diag_window();
 }
 
 #if !CONFIG_CRT_TEST_STANDARD_TOGGLE
