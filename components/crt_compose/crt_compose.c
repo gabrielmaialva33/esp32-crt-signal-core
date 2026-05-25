@@ -6,6 +6,7 @@
 #include "esp_attr.h"
 #include "esp_check.h"
 
+#include <stddef.h>
 #include <string.h>
 
 /* ── Lifecycle ────────────────────────────────────────────────────── */
@@ -318,10 +319,22 @@ IRAM_ATTR static void crt_compose_patch_expanded_palette_sample(uint16_t *active
                                                                 uint16_t logical_x, uint16_t sample)
 {
     const uint16_t first = (uint16_t)(logical_x * 3u);
-    for (uint8_t repeat = 0; repeat < 3u; ++repeat) {
-        const uint16_t stream_pos = (uint16_t)(first + repeat);
-        active_buf[stream_pos ^ 1u] = sample;
-    }
+    active_buf[first ^ 1u] = sample;
+    active_buf[(first + 1u) ^ 1u] = sample;
+    active_buf[(first + 2u) ^ 1u] = sample;
+}
+
+IRAM_ATTR static void crt_compose_patch_expanded_palette_pair(uint16_t *active_buf,
+                                                              uint16_t logical_x, uint16_t l0,
+                                                              uint16_t l1)
+{
+    const uint16_t base = (uint16_t)(logical_x * 3u);
+    active_buf[base] = l0;
+    active_buf[base + 1u] = l0;
+    active_buf[base + 2u] = l1;
+    active_buf[base + 3u] = l0;
+    active_buf[base + 4u] = l1;
+    active_buf[base + 5u] = l1;
 }
 
 IRAM_ATTR static bool crt_compose_patch_sprite_spans_256(crt_compose_t *c,
@@ -352,14 +365,46 @@ IRAM_ATTR static bool crt_compose_patch_sprite_spans_256(crt_compose_t *c,
             (uint8_t)((span->attr & CRT_COMPOSE_PIXEL_BANK_MASK) >> CRT_COMPOSE_PIXEL_BANK_SHIFT);
         const uint8_t *bank = (banks != NULL) ? banks->banks[bank_idx] : NULL;
         const uint8_t *src = span->src;
-        for (uint8_t sx = 0; sx < span->width; ++sx) {
+        uint8_t sx = 0;
+        if ((span->dst_x & 1u) != 0u) {
+            const uint8_t sample_idx = *src;
+            if (sample_idx != key) {
+                const uint8_t palette_idx = (bank != NULL) ? bank[sample_idx] : sample_idx;
+                crt_compose_patch_expanded_palette_sample(active_buf, span->dst_x,
+                                                          pal[palette_idx]);
+            }
+            src += span->src_step;
+            sx = 1;
+        }
+        for (; (uint8_t)(sx + 1u) < span->width; sx = (uint8_t)(sx + 2u)) {
+            const uint8_t sample_idx0 = *src;
+            const uint8_t sample_idx1 = *(src + span->src_step);
+            if (sample_idx0 != key && sample_idx1 != key) {
+                const uint8_t palette_idx0 = (bank != NULL) ? bank[sample_idx0] : sample_idx0;
+                const uint8_t palette_idx1 = (bank != NULL) ? bank[sample_idx1] : sample_idx1;
+                crt_compose_patch_expanded_palette_pair(active_buf, (uint16_t)(span->dst_x + sx),
+                                                        pal[palette_idx0], pal[palette_idx1]);
+            } else {
+                if (sample_idx0 != key) {
+                    const uint8_t palette_idx0 = (bank != NULL) ? bank[sample_idx0] : sample_idx0;
+                    crt_compose_patch_expanded_palette_sample(
+                        active_buf, (uint16_t)(span->dst_x + sx), pal[palette_idx0]);
+                }
+                if (sample_idx1 != key) {
+                    const uint8_t palette_idx1 = (bank != NULL) ? bank[sample_idx1] : sample_idx1;
+                    crt_compose_patch_expanded_palette_sample(
+                        active_buf, (uint16_t)(span->dst_x + sx + 1u), pal[palette_idx1]);
+                }
+            }
+            src += (ptrdiff_t)span->src_step * 2;
+        }
+        if (sx < span->width) {
             const uint8_t sample_idx = *src;
             if (sample_idx != key) {
                 const uint8_t palette_idx = (bank != NULL) ? bank[sample_idx] : sample_idx;
                 crt_compose_patch_expanded_palette_sample(active_buf, (uint16_t)(span->dst_x + sx),
                                                           pal[palette_idx]);
             }
-            src += span->src_step;
         }
     }
     return true;
