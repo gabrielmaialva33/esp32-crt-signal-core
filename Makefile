@@ -8,7 +8,7 @@ HW_SOAK_SECONDS ?= 90
 
 # ── Build ────────────────────────────────────────────────────────────
 
-.PHONY: build flash monitor clean menuconfig fullclean hw-compose-smoke hw-compose-stress hw-compose-pal-stress hw-compose-pal-m-stress hw-compose-pal-n-stress hw-compose-soak
+.PHONY: build flash monitor clean menuconfig fullclean hw-compose-smoke hw-compose-stress hw-compose-pal-stress hw-compose-pal-m-stress hw-compose-pal-n-stress hw-compose-soak hw-calibration-pal-m
 
 build:
 	idf.py build
@@ -62,6 +62,14 @@ hw-compose-pal-n-stress:  ## Build, flash, and validate PAL-N worst-case COMPOSE
 
 hw-compose-soak:  ## Long-run NTSC+PAL COMPOSE stress soak on ESP32 hardware
 	@SOAK_SECONDS="$(HW_SOAK_SECONDS)" PORT="$(HW_PORT)" tools/hw/compose_soak.sh
+
+hw-calibration-pal-m:  ## Build, flash, and validate PAL-M RGB332 calibration card on ESP32 hardware
+	@RUN_NAME="calibration_pal_m" VIDEO_STANDARD="PAL_M" \
+		BUILD_DIR="build/calibration-pal-m" \
+		SDKCONFIG_TMP="/tmp/esp32-crt-calibration-pal-m-sdkconfig" \
+		MONITOR_LOG="/tmp/esp32-crt-calibration-pal-m-monitor.log" \
+		MONITOR_SECONDS=14 MIN_DIAG_LINES=1 \
+		PORT="$(HW_PORT)" tools/hw/calibration_smoke.sh
 
 clean:
 	idf.py fullclean

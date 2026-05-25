@@ -319,6 +319,9 @@ bash -c '. ~/esp/esp-idf/export.sh && idf.py build'
 
 # Flash & monitor
 bash -c '. ~/esp/esp-idf/export.sh && idf.py -p /dev/ttyACM0 flash monitor'
+
+# PAL-M calibration card smoke on real hardware
+make hw-calibration-pal-m HW_PORT=/dev/ttyACM0
 ```
 
 ### Runtime Options

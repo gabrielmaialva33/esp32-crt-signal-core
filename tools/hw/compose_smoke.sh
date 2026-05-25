@@ -40,7 +40,7 @@ prepare_sdkconfig() {
         : >"$SDKCONFIG_TMP"
     fi
 
-    sed -i -E '/^(# )?CONFIG_CRT_RENDER_MODE_(COMPOSE|RGB332_FB|RGB332_COMPOSE|STIMULUS)(=y| is not set)$/d' \
+    sed -i -E '/^(# )?CONFIG_CRT_RENDER_MODE_(COMPOSE|RGB332_FB|RGB332_COMPOSE|CALIBRATION|STIMULUS)(=y| is not set)$/d' \
         "$SDKCONFIG_TMP"
     sed -i -E '/^(# )?CONFIG_CRT_COMPOSE_STRESS_DEMO(=y| is not set)$/d' \
         "$SDKCONFIG_TMP"
@@ -49,6 +49,7 @@ prepare_sdkconfig() {
     {
         printf 'CONFIG_CRT_RENDER_MODE_COMPOSE=y\n'
         printf '# CONFIG_CRT_RENDER_MODE_RGB332_FB is not set\n'
+        printf '# CONFIG_CRT_RENDER_MODE_CALIBRATION is not set\n'
         printf '# CONFIG_CRT_RENDER_MODE_RGB332_COMPOSE is not set\n'
         printf '# CONFIG_CRT_RENDER_MODE_STIMULUS is not set\n'
         case "$VIDEO_STANDARD" in
