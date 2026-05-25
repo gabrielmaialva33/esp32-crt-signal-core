@@ -605,19 +605,6 @@ static void app_fb_fill_ellipse(crt_fb_surface_t *fb, int cx, int cy, int rx, in
     }
 }
 
-/* Burst-sample ADC1_CH4 directly (no drain, pad already in INPUT mode).
- * Returns by writing into out_buf. Period is best-effort; ADC oneshot
- * read takes ~30-50 us so the floor is around 20 kS/s. */
-static void app_ir_burst_sample(int *out_buf, int n, uint32_t period_us)
-{
-    for (int i = 0; i < n; ++i) {
-        adc_oneshot_read(s_ir_adc, APP_IR_ADC_CHANNEL, &out_buf[i]);
-        if (period_us > 0) {
-            esp_rom_delay_us(period_us);
-        }
-    }
-}
-
 static void app_ir_ring_calibrate(void)
 {
     /* CRT-coupled calibration: the IR ring is glued to the CRT face, so
@@ -990,7 +977,7 @@ static esp_err_t app_ir_ring_init(void)
     }
     adc_oneshot_chan_cfg_t chan_cfg = {
         .bitwidth = ADC_BITWIDTH_12,
-        .atten = ADC_ATTEN_DB_11,
+        .atten = ADC_ATTEN_DB_12,
     };
     err = adc_oneshot_config_channel(s_ir_adc, APP_IR_ADC_CHANNEL, &chan_cfg);
     if (err != ESP_OK) {
