@@ -29,6 +29,12 @@ extract_u32() {
     sed -n "s/.*${key}=\([0-9][0-9]*\).*/\1/p" <<<"$line"
 }
 
+extract_i32() {
+    local key="$1"
+    local line="$2"
+    sed -n "s/.*${key}=\(-\{0,1\}[0-9][0-9]*\).*/\1/p" <<<"$line"
+}
+
 run_idf() {
     bash -c '. "$1" >/tmp/idf-export.log 2>&1 && shift && idf.py "$@"' _ "$IDF_EXPORT" "$@"
 }
@@ -153,8 +159,58 @@ validate_monitor() {
     done
 }
 
+summarize_runtime_meta() {
+    mapfile -t runtime_lines < <(grep -a 'runtime_meta:' "$MONITOR_LOG" || true)
+    ((${#runtime_lines[@]} >= 2)) ||
+        fail "expected at least 2 runtime_meta windows, got ${#runtime_lines[@]}"
+
+    local line prep headroom
+    local i=0
+    local steady_windows=0
+    local prep_min=0
+    local prep_max=0
+    local prep_sum=0
+    local headroom_min=0
+    local headroom_max=0
+    local headroom_sum=0
+
+    for line in "${runtime_lines[@]}"; do
+        i=$((i + 1))
+        prep="$(extract_u32 prep_max "$line")"
+        headroom="$(extract_i32 headroom_pct "$line")"
+        [[ -n "$prep" && -n "$headroom" ]] ||
+            fail "runtime_meta ${i}: could not parse prep_max/headroom_pct"
+
+        # First runtime_meta often includes boot/priming cost. Report the steady windows.
+        if ((i == 1)); then
+            continue
+        fi
+
+        if ((steady_windows == 0)); then
+            prep_min="$prep"
+            prep_max="$prep"
+            headroom_min="$headroom"
+            headroom_max="$headroom"
+        else
+            ((prep < prep_min)) && prep_min="$prep"
+            ((prep > prep_max)) && prep_max="$prep"
+            ((headroom < headroom_min)) && headroom_min="$headroom"
+            ((headroom > headroom_max)) && headroom_max="$headroom"
+        fi
+
+        prep_sum=$((prep_sum + prep))
+        headroom_sum=$((headroom_sum + headroom))
+        steady_windows=$((steady_windows + 1))
+    done
+
+    printf '%s: prep steady_windows=%u prep_min=%u prep_avg=%u prep_max=%u headroom_min=%d headroom_avg=%d headroom_max=%d\n' \
+        "$RUN_NAME" "$steady_windows" "$prep_min" "$((prep_sum / steady_windows))" "$prep_max" \
+        "$headroom_min" "$((headroom_sum / steady_windows))" "$headroom_max"
+}
+
 prepare_sdkconfig
 run_idf -B "$BUILD_DIR" -DSDKCONFIG="$SDKCONFIG_TMP" -p "$PORT" build flash
 capture_monitor
 validate_monitor
+summarize_runtime_meta
 printf '%s: OK port=%s windows=%u log=%s\n' "$RUN_NAME" "$PORT" "${#budget_lines[@]}" "$MONITOR_LOG"
