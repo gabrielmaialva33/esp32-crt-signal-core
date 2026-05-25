@@ -346,7 +346,8 @@ tile/compositor pipeline.
 
 `CRT_RENDER_MODE_CALIBRATION` pre-renders a static RGB332 calibration card
 through the same RGB332 scanline hook: color bars, phase stripes, safe-area
-frame, center crosshair, and grayscale ramp for TV alignment checks.
+frame, center crosshair, standard/status labels, and grayscale ramp for TV
+alignment checks.
 
 `CRT_RENDER_MODE_STIMULUS` runs `crt_stimulus` through `crt_compose` as a
 measurement layer: deterministic ramps, checkerboards, PRBS, impulses, chirps,

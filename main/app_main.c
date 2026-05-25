@@ -420,6 +420,29 @@ static void app_overlay_fill_rect(crt_fb_surface_t *fb, int x0, int y0, int w, i
     crt_fb_fill_rect(fb, (uint16_t)x0, (uint16_t)y0, (uint16_t)(x1 - x0), (uint16_t)(y1 - y0), idx);
 }
 
+static void app_draw_text_shadow_5x7(crt_fb_surface_t *fb, uint16_t x, uint16_t y, const char *text,
+                                     uint8_t fg, uint8_t shadow, uint8_t scale)
+{
+    if (x < UINT16_MAX && y < UINT16_MAX) {
+        crt_fb_draw_text_5x7(fb, (uint16_t)(x + 1U), (uint16_t)(y + 1U), text, shadow, scale);
+    }
+    crt_fb_draw_text_5x7(fb, x, y, text, fg, scale);
+}
+
+static void app_draw_calibration_labels(crt_fb_surface_t *fb,
+                                        const crt_timing_standard_info_t *standard_info)
+{
+    if (fb == NULL || fb->buffer == NULL || standard_info == NULL) {
+        return;
+    }
+
+    app_draw_text_shadow_5x7(fb, 10, 10, "CAL", 0xff, 0x00, 2);
+    app_draw_text_shadow_5x7(fb, 10, 30, standard_info->name, 0xff, 0x00, 1);
+    app_draw_text_shadow_5x7(fb, 10, 40, standard_info->experimental ? "EXP" : "VALID", 0xff, 0x00,
+                             1);
+    app_draw_text_shadow_5x7(fb, 98, 116, "CENTER", 0xff, 0x00, 1);
+}
+
 /* Static guide telling the user exactly where to glue the IR ring on the
  * CRT face. The 256x240 framebuffer is mapped onto a 4:3 raster, so the
  * 40 mm ring becomes an ellipse in FB coordinates (pixels are wider than
@@ -438,6 +461,9 @@ static void app_draw_ring_indicator(crt_fb_surface_t *fb)
     const int ry = (int)(radius_mm * (float)fb->height / APP_CRT_VISIBLE_H_MM + 0.5f);
 
     const uint8_t IDX_WHT = 255;
+
+    app_draw_text_shadow_5x7(fb, 8, 8, "IR RING", IDX_WHT, 0, 1);
+    app_draw_text_shadow_5x7(fb, (uint16_t)(cx + 8), (uint16_t)(cy + 8), "CENTER", IDX_WHT, 0, 1);
 
     /* Crosshair: 33 px x 1 px white core (pure white on black) */
     app_overlay_fill_rect(fb, cx - 14, cy, 29, 1, IDX_WHT);
@@ -1072,6 +1098,7 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
         } else if (k_use_calibration_card) {
             crt_demo_pattern_fill_rgb332_calibration_card(s_fb.buffer, s_fb.width, s_fb.height,
                                                           s_fb.width);
+            app_draw_calibration_labels(&s_fb, &standard_info);
         } else if (k_use_stimulus) {
             crt_fb_palette_init_grayscale(&s_fb, APP_BLANK_LEVEL, APP_WHITE_LEVEL);
         } else {
