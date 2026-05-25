@@ -68,6 +68,13 @@ static crt_timing_standard_info_t s_app_standard_info;
 static bool s_app_metadata_valid = false;
 static uint32_t s_last_diag_underruns = 0;
 
+typedef struct {
+    uint32_t line_us_x100;
+    uint32_t prep_us_x100;
+    uint32_t prep_pct;
+    int32_t headroom_pct;
+} app_timing_budget_t;
+
 static bool app_uses_compose_demo(void)
 {
     return !k_use_rgb332_framebuffer && !k_use_calibration_card && !k_use_stimulus;
@@ -88,6 +95,25 @@ static const char *app_render_mode_name(void)
         return "stimulus";
     }
     return k_enable_color ? "color_bars_ramp" : "luma_bars";
+}
+
+static app_timing_budget_t app_calc_timing_budget(const crt_diag_snapshot_t *diag)
+{
+    app_timing_budget_t budget = {0};
+    if (diag == NULL || !s_app_metadata_valid || s_app_timing.sample_rate_hz == 0U) {
+        return budget;
+    }
+
+    budget.line_us_x100 = (uint32_t)(((uint64_t)s_app_timing.samples_per_line * 100000000ULL) /
+                                     (uint64_t)s_app_timing.sample_rate_hz);
+    budget.prep_us_x100 = (uint32_t)(((uint64_t)diag->prep_cycles_max * 100ULL) /
+                                     (uint64_t)CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ);
+    if (budget.line_us_x100 > 0U) {
+        budget.prep_pct =
+            (uint32_t)(((uint64_t)budget.prep_us_x100 * 100ULL) / (uint64_t)budget.line_us_x100);
+        budget.headroom_pct = 100 - (int32_t)budget.prep_pct;
+    }
+    return budget;
 }
 
 /* Demo scene:
@@ -383,6 +409,7 @@ static void app_draw_calibration_runtime_hud(crt_fb_surface_t *fb, const crt_dia
     }
 
     char line[40];
+    const app_timing_budget_t budget = app_calc_timing_budget(diag);
     const uint32_t uptime_s = (uint32_t)(esp_timer_get_time() / 1000000LL);
     const uint16_t blank_lines = (uint16_t)(s_app_timing.total_lines - s_app_timing.active_lines);
 
@@ -407,6 +434,9 @@ static void app_draw_calibration_runtime_hud(crt_fb_surface_t *fb, const crt_dia
 
     snprintf(line, sizeof(line), "P %" PRIu32, diag->prep_cycles_max);
     app_draw_text_shadow_5x7(fb, 174, 214, line, 0xff, 0x00, 1);
+
+    snprintf(line, sizeof(line), "H %" PRId32 "%%", budget.headroom_pct);
+    app_draw_text_shadow_5x7(fb, 174, 226, line, 0xff, 0x00, 1);
 }
 
 static void app_draw_calibration_card_with_hud(const crt_diag_snapshot_t *diag)
@@ -627,13 +657,15 @@ static void app_log_diag_snapshot(void)
     const uint32_t underrun_delta = diag.dma_underrun_count - s_last_diag_underruns;
     s_last_diag_underruns = diag.dma_underrun_count;
     const uint32_t uptime_s = (uint32_t)(esp_timer_get_time() / 1000000LL);
+    const app_timing_budget_t budget = app_calc_timing_budget(&diag);
 
     if (s_app_metadata_valid) {
         ESP_LOGI(TAG,
                  "runtime_meta: t=%" PRIu32 "s standard=%s render=%s active=%u total=%u "
                  "field=%u.%03uHz sample=%" PRIu32 " subcarrier=%" PRIu32
                  " chroma=%s status=%s underruns=%" PRIu32 " delta=%" PRIu32 " queue_min=%" PRIu32
-                 " prep_max=%" PRIu32 " cycles",
+                 " prep_max=%" PRIu32 " cycles prep_us=%" PRIu32 ".%02" PRIu32 " line_us=%" PRIu32
+                 ".%02" PRIu32 " prep_pct=%" PRIu32 " headroom_pct=%" PRId32,
                  uptime_s, s_app_standard_info.name, app_render_mode_name(),
                  (unsigned)s_app_timing.active_lines, (unsigned)s_app_timing.total_lines,
                  (unsigned)(s_app_standard_info.field_rate_millihz / 1000U),
@@ -642,7 +674,9 @@ static void app_log_diag_snapshot(void)
                  s_app_standard_info.chroma_phase_alternates ? "alternate" : "fixed",
                  s_app_standard_info.experimental ? "experimental" : "validated",
                  diag.dma_underrun_count, underrun_delta, diag.ready_queue_min_depth,
-                 diag.prep_cycles_max);
+                 diag.prep_cycles_max, budget.prep_us_x100 / 100U, budget.prep_us_x100 % 100U,
+                 budget.line_us_x100 / 100U, budget.line_us_x100 % 100U, budget.prep_pct,
+                 budget.headroom_pct);
     } else {
         ESP_LOGI(TAG,
                  "runtime_meta: t=%" PRIu32 "s underruns=%" PRIu32 " delta=%" PRIu32
