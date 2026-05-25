@@ -8,10 +8,13 @@ HW_SOAK_SECONDS ?= 90
 
 # ── Build ────────────────────────────────────────────────────────────
 
-.PHONY: build flash monitor clean menuconfig fullclean hw-compose-smoke hw-compose-stress hw-compose-pal-stress hw-compose-pal-m-stress hw-compose-pal-n-stress hw-compose-soak hw-calibration-pal-m
+.PHONY: build flash monitor clean menuconfig fullclean build-render-modes hw-compose-smoke hw-compose-stress hw-compose-pal-stress hw-compose-pal-m-stress hw-compose-pal-n-stress hw-compose-soak hw-calibration-pal-m
 
 build:
 	idf.py build
+
+build-render-modes:  ## Build every app render mode with isolated sdkconfig/build dirs
+	@tools/hw/render_mode_build_matrix.sh
 
 flash:
 	idf.py -p $(PORT) flash
