@@ -3,6 +3,7 @@
 #include "esp_attr.h"
 #include "esp_check.h"
 
+#include <stddef.h>
 #include <string.h>
 
 static uint8_t crt_sprite_size_px(crt_sprite_size_t size)
@@ -434,23 +435,28 @@ IRAM_ATTR uint8_t crt_sprite_layer_collect_scanline(crt_sprite_layer_t *layer,
         const uint8_t *span_src = hflip ? &src[sprite_px - 1u - src_start] : &src[src_start];
         const int8_t span_step = hflip ? -1 : 1;
 
-        bool wrote_pixel = false;
+        const uint8_t span_width = (uint8_t)(dst_end - dst_x);
+        uint8_t trim_start = 0;
         const uint8_t *sample_src = span_src;
-        for (uint8_t sx = 0; sx < (uint8_t)(dst_end - dst_x); ++sx) {
-            if (*sample_src != layer->transparent_idx) {
-                wrote_pixel = true;
-                break;
-            }
+        while (trim_start < span_width && *sample_src == layer->transparent_idx) {
+            trim_start++;
             sample_src += span_step;
         }
-        if (!wrote_pixel) {
+        if (trim_start == span_width) {
             continue;
+        }
+        uint8_t trim_end = 0;
+        const uint8_t *tail_src = span_src + ((ptrdiff_t)span_step * (span_width - 1u));
+        while (trim_end < (uint8_t)(span_width - trim_start) &&
+               *tail_src == layer->transparent_idx) {
+            trim_end++;
+            tail_src -= span_step;
         }
 
         out_spans[span_count++] = (crt_sprite_scanline_span_t){
-            .dst_x = dst_x,
-            .width = (uint8_t)(dst_end - dst_x),
-            .src = span_src,
+            .dst_x = (uint16_t)(dst_x + trim_start),
+            .width = (uint8_t)(span_width - trim_start - trim_end),
+            .src = span_src + ((ptrdiff_t)span_step * trim_start),
             .src_step = span_step,
             .attr = crt_sprite_compose_attr(attr),
         };

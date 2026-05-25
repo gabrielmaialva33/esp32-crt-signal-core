@@ -1073,6 +1073,46 @@ static void test_fused_base_plus_sprite_patches_256_span(void) {
     printf("  fused base + sprite patches 256 span: OK\n");
 }
 
+static void test_sprite_collect_scanline_trims_transparent_edges(void) {
+    memset(g_sprite_atlas, 0, sizeof(g_sprite_atlas));
+    g_sprite_atlas[2] = 0x41;
+    g_sprite_atlas[3] = 0x42;
+    g_sprite_atlas[4] = 0x43;
+
+    crt_sprite_atlas_t atlas;
+    crt_sprite_layer_t sprites;
+    assert(crt_sprite_atlas_init(&atlas, g_sprite_atlas, CRT_SPRITE_CELL_SIZE,
+                                 CRT_SPRITE_CELL_SIZE, CRT_SPRITE_CELL_SIZE) == 0);
+    assert(crt_sprite_layer_init(&sprites, &atlas, 0) == 0);
+    uint8_t sprite_id = CRT_SPRITE_INVALID_ID;
+    assert(crt_sprite_add(&sprites, 0, 0, CRT_SPRITE_SIZE_8X8, 6, 0, &sprite_id) == 0);
+
+    crt_sprite_scanline_span_t spans[CRT_SPRITE_DEFAULT_PERLINE] = {0};
+    uint8_t span_count =
+        crt_sprite_layer_collect_scanline(&sprites, 0, 32, spans, CRT_SPRITE_DEFAULT_PERLINE);
+
+    assert(span_count == 1);
+    assert(spans[0].dst_x == 8);
+    assert(spans[0].width == 3);
+    assert(spans[0].src == &g_sprite_atlas[2]);
+    assert(spans[0].src_step == 1);
+    assert(sprites.last_line_considered == 1);
+    assert(sprites.last_line_rendered == 1);
+
+    assert(crt_sprite_set_attr(&sprites, sprite_id, CRT_SPRITE_ATTR_HFLIP) == 0);
+    memset(spans, 0, sizeof(spans));
+    span_count = crt_sprite_layer_collect_scanline(&sprites, 0, 32, spans, CRT_SPRITE_DEFAULT_PERLINE);
+
+    assert(span_count == 1);
+    assert(spans[0].dst_x == 9);
+    assert(spans[0].width == 3);
+    assert(spans[0].src == &g_sprite_atlas[4]);
+    assert(spans[0].src_step == -1);
+    assert(sprites.last_line_considered == 1);
+    assert(sprites.last_line_rendered == 1);
+    printf("  sprite collect trims transparent edges: OK\n");
+}
+
 static void test_fused_base_plus_bg_priority_sprite_stays_span_path(void) {
     init_linear_palette();
     reset_mock_counters();
@@ -1774,6 +1814,7 @@ int main(void) {
     test_fused_base_plus_present_overlay_materializes();
     test_compose_stats_track_fused_and_materialized_paths();
     test_fused_base_plus_sprite_patches_256_span();
+    test_sprite_collect_scanline_trims_transparent_edges();
     test_fused_base_plus_bg_priority_sprite_stays_span_path();
     test_fused_base_plus_sprite_palette_bank_stays_span_path();
     test_fused_attr_base_plus_sprite_palette_bank_stays_span_path();
