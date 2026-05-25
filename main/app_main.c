@@ -8,18 +8,14 @@
 #include "crt_stimulus.h"
 #include "crt_tile.h"
 
-#include "driver/gpio.h"
-#include "esp_adc/adc_oneshot.h"
 #include "esp_attr.h"
 #include "esp_err.h"
 #include "esp_log.h"
-#include "esp_rom_sys.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 #include <inttypes.h>
-#include <math.h>
 #include <stdbool.h>
 #include <string.h>
 
@@ -30,6 +26,8 @@
 #ifndef CONFIG_CRT_COMPOSE_STRESS_DEMO
 #define CONFIG_CRT_COMPOSE_STRESS_DEMO 0
 #endif
+
+#define APP_DIAG_INTERVAL_MS 1000U
 
 #if CONFIG_CRT_ENABLE_UART_UPLOAD
 #include "driver/uart.h"
@@ -64,10 +62,32 @@ static const bool k_use_stimulus = false;
 static crt_fb_surface_t s_fb;
 static crt_ppu_t s_ppu;
 static crt_stimulus_t s_stimulus;
+static crt_compose_t s_stimulus_compose;
+static crt_timing_profile_t s_app_timing;
+static crt_timing_standard_info_t s_app_standard_info;
+static bool s_app_metadata_valid = false;
+static uint32_t s_last_diag_underruns = 0;
 
 static bool app_uses_compose_demo(void)
 {
     return !k_use_rgb332_framebuffer && !k_use_calibration_card && !k_use_stimulus;
+}
+
+static const char *app_render_mode_name(void)
+{
+    if (k_use_rgb332_framebuffer) {
+        return "rgb332_fb";
+    }
+    if (k_use_calibration_card) {
+        return "calibration";
+    }
+    if (k_use_rgb332_compose) {
+        return "rgb332_compose";
+    }
+    if (k_use_stimulus) {
+        return "stimulus";
+    }
+    return k_enable_color ? "color_bars_ramp" : "luma_bars";
 }
 
 /* Demo scene:
@@ -224,43 +244,6 @@ IRAM_ATTR static void demo_frame_hook(uint32_t frame, void *user_data)
 #endif
 }
 
-/* PRC calibration mode pre-rasterizes the static target into the indexed-8
- * surface and reuses crt_fb_scanline_hook (validated 0-underrun hot path).
- * Dynamic stimulus cycler is intentionally disabled here while we get the
- * geometric alignment dialed in; a separate code path will re-enable it once
- * the prep-task budget is profiled with stimulus loaded. */
-
-IRAM_ATTR __attribute__((unused))
-
-static void
-stimulus_frame_hook(uint32_t frame, void *user_data)
-{
-    (void)user_data;
-    crt_stimulus_set_frame(&s_stimulus, frame);
-
-    /* PRC calibration cycler: rotate 5 patterns, 8 s each (~480 NTSC frames),
-     * giving full system-identification sweep in 40 s.
-     *  CHECKER       - geometric calibration (align IR ring to raster center)
-     *  PRBS          - pseudo-random binary excitation for impulse response
-     *  IMPULSE       - point-source transient response
-     *  CHIRP         - frequency-domain sweep
-     *  FRAME_MARKERS - temporal sync fiducials for capture alignment
-     * Counter-based stage advance avoids a runtime divide every frame
-     * inside this IRAM hook. */
-    static const crt_stimulus_pattern_t kCycle[] = {
-        CRT_STIMULUS_PATTERN_CHECKER,       CRT_STIMULUS_PATTERN_PRBS,
-        CRT_STIMULUS_PATTERN_IMPULSE,       CRT_STIMULUS_PATTERN_CHIRP,
-        CRT_STIMULUS_PATTERN_FRAME_MARKERS,
-    };
-    static uint32_t s_frame_in_stage = 0;
-    static uint8_t s_stage = 0;
-    if (++s_frame_in_stage >= 480U) {
-        s_frame_in_stage = 0;
-        s_stage = (uint8_t)((s_stage + 1U) % (sizeof(kCycle) / sizeof(kCycle[0])));
-        s_stimulus.config.pattern = kCycle[s_stage];
-    }
-}
-
 static void app_fill_rgb332_test_card(crt_fb_surface_t *fb)
 {
     if (fb == NULL || fb->buffer == NULL || fb->width == 0 || fb->height == 0) {
@@ -370,56 +353,6 @@ static void uart_upload_shutdown(void)
 #endif
 #endif
 
-/* Physical scale of the IR ring + assumed visible CRT face.
- * Tweak APP_CRT_VISIBLE_W_MM / APP_CRT_VISIBLE_H_MM for your tube; 5"
- * defaults to ~100 x 75 mm. The overlay renders the ring at true 40 mm
- * scale so the LEDs land exactly on the markers when you press the ring
- * onto the glass. */
-#define APP_RING_OD_MM       40.0f
-#define APP_RING_LED_COUNT   11
-#define APP_CRT_VISIBLE_W_MM 275.0f
-#define APP_CRT_VISIBLE_H_MM 206.0f
-/* Optical centroid (in FB pixels) measured from the XY map gaussian fit.
- * Override here when the ring is repositioned. The indicator + decay + PRBS
- * disks all use this center so the IR LEDs land on top of the markers. */
-#define APP_RING_CENTER_X 136
-#define APP_RING_CENTER_Y 122
-
-static inline void app_overlay_put(crt_fb_surface_t *fb, int x, int y, uint8_t idx)
-{
-    if (x < 0 || y < 0 || (uint16_t)x >= fb->width || (uint16_t)y >= fb->height) {
-        return;
-    }
-    crt_fb_put(fb, (uint16_t)x, (uint16_t)y, idx);
-}
-
-static void app_overlay_fill_rect(crt_fb_surface_t *fb, int x0, int y0, int w, int h, uint8_t idx)
-{
-    if (fb == NULL || fb->buffer == NULL || w <= 0 || h <= 0) {
-        return;
-    }
-
-    int x1 = x0 + w;
-    int y1 = y0 + h;
-    if (x0 < 0) {
-        x0 = 0;
-    }
-    if (y0 < 0) {
-        y0 = 0;
-    }
-    if (x1 > (int)fb->width) {
-        x1 = (int)fb->width;
-    }
-    if (y1 > (int)fb->height) {
-        y1 = (int)fb->height;
-    }
-    if (x0 >= x1 || y0 >= y1) {
-        return;
-    }
-
-    crt_fb_fill_rect(fb, (uint16_t)x0, (uint16_t)y0, (uint16_t)(x1 - x0), (uint16_t)(y1 - y0), idx);
-}
-
 static void app_draw_text_shadow_5x7(crt_fb_surface_t *fb, uint16_t x, uint16_t y, const char *text,
                                      uint8_t fg, uint8_t shadow, uint8_t scale)
 {
@@ -443,601 +376,49 @@ static void app_draw_calibration_labels(crt_fb_surface_t *fb,
     app_draw_text_shadow_5x7(fb, 98, 116, "CENTER", 0xff, 0x00, 1);
 }
 
-/* Static guide telling the user exactly where to glue the IR ring on the
- * CRT face. The 256x240 framebuffer is mapped onto a 4:3 raster, so the
- * 40 mm ring becomes an ellipse in FB coordinates (pixels are wider than
- * they are tall). The overlay is drawn on a clean black background. */
-static void app_draw_ring_indicator(crt_fb_surface_t *fb)
+static void app_draw_calibration_runtime_hud(crt_fb_surface_t *fb, const crt_diag_snapshot_t *diag)
 {
-    if (fb == NULL || fb->buffer == NULL || fb->width == 0 || fb->height == 0) {
+    if (fb == NULL || fb->buffer == NULL || diag == NULL || !s_app_metadata_valid) {
         return;
     }
-    crt_fb_clear(fb, 0);
 
-    const int cx = APP_RING_CENTER_X;
-    const int cy = APP_RING_CENTER_Y;
-    const float radius_mm = APP_RING_OD_MM * 0.5f;
-    const int rx = (int)(radius_mm * (float)fb->width / APP_CRT_VISIBLE_W_MM + 0.5f);
-    const int ry = (int)(radius_mm * (float)fb->height / APP_CRT_VISIBLE_H_MM + 0.5f);
+    char line[40];
+    const uint32_t uptime_s = (uint32_t)(esp_timer_get_time() / 1000000LL);
+    const uint16_t blank_lines = (uint16_t)(s_app_timing.total_lines - s_app_timing.active_lines);
 
-    const uint8_t IDX_WHT = 255;
+    snprintf(line, sizeof(line), "FS %" PRIu32, s_app_timing.sample_rate_hz);
+    app_draw_text_shadow_5x7(fb, 10, 52, line, 0xff, 0x00, 1);
 
-    app_draw_text_shadow_5x7(fb, 8, 8, "IR RING", IDX_WHT, 0, 1);
-    app_draw_text_shadow_5x7(fb, (uint16_t)(cx + 8), (uint16_t)(cy + 8), "CENTER", IDX_WHT, 0, 1);
+    snprintf(line, sizeof(line), "SC %" PRIu32, s_app_standard_info.color_subcarrier_hz);
+    app_draw_text_shadow_5x7(fb, 10, 62, line, 0xff, 0x00, 1);
 
-    /* Crosshair: 33 px x 1 px white core (pure white on black) */
-    app_overlay_fill_rect(fb, cx - 14, cy, 29, 1, IDX_WHT);
-    app_overlay_fill_rect(fb, cx, cy - 14, 1, 29, IDX_WHT);
+    snprintf(line, sizeof(line), "L %u+%u", (unsigned)s_app_timing.active_lines,
+             (unsigned)blank_lines);
+    app_draw_text_shadow_5x7(fb, 10, 72, line, 0xff, 0x00, 1);
 
-    /* Elliptical outline of the ring (72 angular samples, 1-px white) */
-    for (int t = 0; t < 72; ++t) {
-        const float a = (float)t * (2.0f * (float)M_PI / 72.0f);
-        const int x = cx + (int)(rx * cosf(a) + 0.5f);
-        const int y = cy + (int)(ry * sinf(a) + 0.5f);
-        app_overlay_put(fb, x, y, IDX_WHT);
-    }
+    snprintf(line, sizeof(line), "T %" PRIu32 "s", uptime_s);
+    app_draw_text_shadow_5x7(fb, 174, 178, line, 0xff, 0x00, 1);
 
-    /* 11 LED markers on the outline — 5x5 white squares for high contrast. */
-    for (int k = 0; k < APP_RING_LED_COUNT; ++k) {
-        const float a = (float)k * (2.0f * (float)M_PI / (float)APP_RING_LED_COUNT);
-        const int mx = cx + (int)(rx * cosf(a) + 0.5f);
-        const int my = cy + (int)(ry * sinf(a) + 0.5f);
-        app_overlay_fill_rect(fb, mx - 2, my - 2, 5, 5, IDX_WHT);
-    }
+    snprintf(line, sizeof(line), "U %" PRIu32, diag->dma_underrun_count);
+    app_draw_text_shadow_5x7(fb, 174, 190, line, 0xff, 0x00, 1);
+
+    snprintf(line, sizeof(line), "Q %" PRIu32, diag->ready_queue_min_depth);
+    app_draw_text_shadow_5x7(fb, 174, 202, line, 0xff, 0x00, 1);
+
+    snprintf(line, sizeof(line), "P %" PRIu32, diag->prep_cycles_max);
+    app_draw_text_shadow_5x7(fb, 174, 214, line, 0xff, 0x00, 1);
 }
 
-/* ── Single-pin IR ring driver + ambient sensor (port from devkit-v1) ──
- * GPIO32 dual-mode: OUTPUT drives the XZ511c-06 ring HIGH/LOW; INPUT +
- * ADC1_CH4 reads ambient luminance through the same pad. GPIO32 is in a
- * different domain than GPIO25/I2S0/DAC, so it runs free of the composite
- * pipeline. The task is pinned to Core 0 so it never steals cycles from
- * the prep_task on Core 1. */
-#define APP_IR_PIN         GPIO_NUM_32
-#define APP_IR_ADC_UNIT    ADC_UNIT_1
-#define APP_IR_ADC_CHANNEL ADC_CHANNEL_4
-#define APP_IR_SAMPLE_MS   100U
-#define APP_IR_BURST_N     16
-#define APP_IR_DRAIN_MS    20U
-
-typedef enum {
-    APP_IR_MODE_AUTO = 0,
-    APP_IR_MODE_FORCE_ON,
-    APP_IR_MODE_FORCE_OFF,
-    APP_IR_MODE_MONITOR,
-} app_ir_mode_t;
-
-static adc_oneshot_unit_handle_t s_ir_adc = NULL;
-static bool s_ir_ring_on = false;
-static int s_ir_baseline = 0;
-static int s_ir_threshold = 200;
-static int s_ir_hysteresis = 80;
-/* +1 when light_mean > dark_mean (forward-biased coupling), -1 if the photo-
- * diode polarity is inverted. Multiplied into (v - baseline) so the LIGHT
- * threshold fires regardless of orientation. */
-static int s_ir_polarity = 1;
-static app_ir_mode_t s_ir_mode = APP_IR_MODE_MONITOR; /* manual toggle below */
-
-static void app_ir_ring_set(bool on)
+static void app_draw_calibration_card_with_hud(const crt_diag_snapshot_t *diag)
 {
-    gpio_set_direction(APP_IR_PIN, GPIO_MODE_OUTPUT);
-    gpio_set_level(APP_IR_PIN, on ? 1 : 0);
-    s_ir_ring_on = on;
-}
-
-static int app_ir_ring_measure(void)
-{
-    const bool was_on = s_ir_ring_on;
-    /* Drain phase: force pad LOW to discharge the parasitic capacitance
-     * left by the previous OUTPUT state. */
-    gpio_set_direction(APP_IR_PIN, GPIO_MODE_OUTPUT);
-    gpio_set_level(APP_IR_PIN, 0);
-    vTaskDelay(pdMS_TO_TICKS(APP_IR_DRAIN_MS));
-
-    /* Sense phase: pad as input with internal pull-down so dark = ~0. */
-    gpio_set_direction(APP_IR_PIN, GPIO_MODE_INPUT);
-    gpio_set_pull_mode(APP_IR_PIN, GPIO_PULLDOWN_ONLY);
-    esp_rom_delay_us(500);
-
-    long sum = 0;
-    for (int i = 0; i < APP_IR_BURST_N; ++i) {
-        int raw = 0;
-        adc_oneshot_read(s_ir_adc, APP_IR_ADC_CHANNEL, &raw);
-        sum += raw;
-        esp_rom_delay_us(200);
-    }
-    const int v = (int)(sum / APP_IR_BURST_N);
-
-    app_ir_ring_set(was_on);
-    return v;
-}
-
-static int app_ir_capture_window(uint32_t window_ms, int *out_min, int *out_max)
-{
-    long sum = 0;
-    int n = 0;
-    int vmin = 4095;
-    int vmax = 0;
-    const int64_t end_ms = (esp_timer_get_time() / 1000) + window_ms;
-    while ((esp_timer_get_time() / 1000) < end_ms) {
-        const int v = app_ir_ring_measure();
-        sum += v;
-        if (v < vmin)
-            vmin = v;
-        if (v > vmax)
-            vmax = v;
-        n++;
-        vTaskDelay(pdMS_TO_TICKS(50));
-    }
-    if (out_min)
-        *out_min = vmin;
-    if (out_max)
-        *out_max = vmax;
-    return (n > 0) ? (int)(sum / n) : 0;
-}
-
-/* Fills the entire indexed-8 framebuffer with a single palette index. */
-static void app_fb_fill(crt_fb_surface_t *fb, uint8_t idx)
-{
-    crt_fb_clear(fb, idx);
-}
-
-/* Fills an axis-aligned ellipse at (cx, cy) with semi-axes (rx, ry) using
- * palette index `idx`. Used to light a disk that maps the IR ring footprint
- * onto the phosphor for impulse-response measurement. */
-static void app_fb_fill_ellipse(crt_fb_surface_t *fb, int cx, int cy, int rx, int ry, uint8_t idx)
-{
-    if (fb == NULL || fb->buffer == NULL || rx <= 0 || ry <= 0) {
+    if (!k_use_calibration_card || s_fb.buffer == NULL || !s_app_metadata_valid) {
         return;
     }
-    const long rx2 = (long)rx * rx;
-    const long ry2 = (long)ry * ry;
-    for (int dy = -ry; dy <= ry; ++dy) {
-        const long term_y = (long)dy * dy * rx2;
-        for (int dx = -rx; dx <= rx; ++dx) {
-            if ((long)dx * dx * ry2 + term_y <= rx2 * ry2) {
-                const int x = cx + dx;
-                const int y = cy + dy;
-                if (x >= 0 && y >= 0 && (uint16_t)x < fb->width && (uint16_t)y < fb->height) {
-                    crt_fb_put(fb, (uint16_t)x, (uint16_t)y, idx);
-                }
-            }
-        }
-    }
-}
 
-static void app_ir_ring_calibrate(void)
-{
-    /* CRT-coupled calibration: the IR ring is glued to the CRT face, so
-     * the LEDs in the ring sit micrometers from the phosphor and act as
-     * photodiodes when GPIO32 floats. We drive the whole framebuffer to
-     * pure white for 2 s (LIGHT) then pure black for 2 s (DARK) and
-     * record the ADC swing. */
-    app_ir_ring_set(false);
-
-    ESP_LOGI(TAG, "IR cal: CRT FULL WHITE, ring on glass — measuring 2 s...");
-    app_fb_fill(&s_fb, 255);
-    vTaskDelay(pdMS_TO_TICKS(500)); /* phosphor + ADC settle */
-    int light_min, light_max;
-    const int light_mean = app_ir_capture_window(2000, &light_min, &light_max);
-    ESP_LOGI(TAG, "IR cal: LIGHT min=%4d max=%4d mean=%4d", light_min, light_max, light_mean);
-
-    ESP_LOGI(TAG, "IR cal: CRT FULL BLACK — measuring 2 s...");
-    app_fb_fill(&s_fb, 0);
-    vTaskDelay(pdMS_TO_TICKS(500));
-    int dark_min, dark_max;
-    const int dark_mean = app_ir_capture_window(2000, &dark_min, &dark_max);
-    ESP_LOGI(TAG, "IR cal: DARK  min=%4d max=%4d mean=%4d", dark_min, dark_max, dark_mean);
-
-    const int swing = light_mean - dark_mean;
-    const int abs_swing = (swing < 0) ? -swing : swing;
-    s_ir_baseline = (light_mean + dark_mean) / 2;
-    s_ir_threshold = (abs_swing > 0) ? (abs_swing / 4) : 200;
-    s_ir_hysteresis = (abs_swing > 0) ? (abs_swing / 8) : 80;
-    s_ir_polarity = (swing >= 0) ? 1 : -1;
-    ESP_LOGI(TAG, "IR cal: swing=%+d baseline=%d threshold=%d hyst=%d polarity=%+d", swing,
-             s_ir_baseline, s_ir_threshold, s_ir_hysteresis, s_ir_polarity);
-    if (abs_swing < 30) {
-        ESP_LOGW(TAG, "IR cal: |swing| < 30 LSB — ring may not be optically coupled to CRT");
-    }
-
-    /* Restore the ring placement indicator after calibration. */
-    app_draw_ring_indicator(&s_fb);
-}
-
-/* 2D scan: lights a small disk at every (gx, gy) position of an NxN grid,
- * measures the ADC at each, then prints the matrix. The peak cell is the
- * true centroid of the IR ring's optical footprint on the CRT face. */
-static void app_ir_xy_map(void)
-{
-    const int kGrid = 16;  /* 16x16 = 256 measurements */
-    const int kProbeR = 6; /* small disc, smaller than ring radius */
-    const int kSettleMs = 80;
-    const int kSampleN = 32; /* doubled from 16 → √2 noise reduction */
-
-    gpio_set_direction(APP_IR_PIN, GPIO_MODE_INPUT);
-    gpio_set_pull_mode(APP_IR_PIN, GPIO_PULLDOWN_ONLY);
-    esp_rom_delay_us(500);
-
-    static int matrix[16][16] = {{0}};
-    int peak_v = 0, peak_i = 0, peak_j = 0;
-    long sum_w = 0;
-    long sum_wx = 0;
-    long sum_wy = 0;
-
-    ESP_LOGI("xy_map", "starting %dx%d sweep, probe r=%d", kGrid, kGrid, kProbeR);
-    for (int j = 0; j < kGrid; ++j) {
-        const int cy = (int)(((long)j * (s_fb.height - 2 * kProbeR - 1)) / (kGrid - 1)) + kProbeR;
-        for (int i = 0; i < kGrid; ++i) {
-            const int cx =
-                (int)(((long)i * (s_fb.width - 2 * kProbeR - 1)) / (kGrid - 1)) + kProbeR;
-            app_fb_fill(&s_fb, 0);
-            app_fb_fill_ellipse(&s_fb, cx, cy, kProbeR, kProbeR, 255);
-            vTaskDelay(pdMS_TO_TICKS(kSettleMs));
-            long sum = 0;
-            for (int s = 0; s < kSampleN; ++s) {
-                int v;
-                adc_oneshot_read(s_ir_adc, APP_IR_ADC_CHANNEL, &v);
-                sum += v;
-                esp_rom_delay_us(200);
-            }
-            const int adc = (int)(sum / kSampleN);
-            matrix[j][i] = adc;
-            if (adc > peak_v) {
-                peak_v = adc;
-                peak_i = i;
-                peak_j = j;
-            }
-            sum_w += adc;
-            sum_wx += (long)adc * cx;
-            sum_wy += (long)adc * cy;
-        }
-    }
-
-    /* Print as one row per ESP_LOGI line for readability. */
-    char line[160];
-    for (int j = 0; j < kGrid; ++j) {
-        int n = snprintf(line, sizeof(line), "row%2d:", j);
-        for (int i = 0; i < kGrid; ++i) {
-            n += snprintf(line + n, sizeof(line) - n, " %4d", matrix[j][i]);
-        }
-        ESP_LOGI("xy_csv", "%s", line);
-    }
-    const int peak_px =
-        (int)(((long)peak_i * (s_fb.width - 2 * kProbeR - 1)) / (kGrid - 1)) + kProbeR;
-    const int peak_py =
-        (int)(((long)peak_j * (s_fb.height - 2 * kProbeR - 1)) / (kGrid - 1)) + kProbeR;
-    ESP_LOGI("xy_map", "PEAK cell=(%d,%d) px=(%d,%d) ADC=%d", peak_i, peak_j, peak_px, peak_py,
-             peak_v);
-    if (sum_w > 0) {
-        const long centroid_x = sum_wx / sum_w;
-        const long centroid_y = sum_wy / sum_w;
-        ESP_LOGI("xy_map", "WEIGHTED centroid px=(%ld,%ld)  fb=(%d,%d)", centroid_x, centroid_y,
-                 s_fb.width, s_fb.height);
-    }
-    app_ir_ring_set(false);
-}
-
-/* Area sweep: light a thin vertical bar at column X (full height), measure
- * mean ADC; repeat for 16 X positions, then for 16 Y positions with a
- * horizontal bar. Output reveals the optical footprint of the ring on the
- * CRT face: peak = center of ring sensitivity, FWHM = effective radius. */
-static void app_ir_area_sweep(void)
-{
-    const int kSteps = 16;
-    const int kBarThickness = 8;
-    const int kSettleMs = 60;
-    const int kSampleN = 8;
-
-    /* Pad in INPUT + pulldown for ADC reads */
-    gpio_set_direction(APP_IR_PIN, GPIO_MODE_INPUT);
-    gpio_set_pull_mode(APP_IR_PIN, GPIO_PULLDOWN_ONLY);
-    esp_rom_delay_us(500);
-
-    ESP_LOGI("area_x", "vertical-bar sweep across X (thickness=%d, %d positions)", kBarThickness,
-             kSteps);
-    int x_curve[16] = {0};
-    for (int i = 0; i < kSteps; ++i) {
-        const int x = (int)(((long)i * (s_fb.width - kBarThickness)) / (kSteps - 1));
-        app_fb_fill(&s_fb, 0);
-        crt_fb_fill_rect(&s_fb, (uint16_t)x, 0, kBarThickness, s_fb.height, 255);
-        vTaskDelay(pdMS_TO_TICKS(kSettleMs));
-        long sum = 0;
-        for (int s = 0; s < kSampleN; ++s) {
-            int v;
-            adc_oneshot_read(s_ir_adc, APP_IR_ADC_CHANNEL, &v);
-            sum += v;
-            esp_rom_delay_us(200);
-        }
-        x_curve[i] = (int)(sum / kSampleN);
-    }
-    char line[160];
-    int n = snprintf(line, sizeof(line), "ADC@x:");
-    for (int i = 0; i < kSteps; ++i) {
-        n += snprintf(line + n, sizeof(line) - n, " %4d", x_curve[i]);
-    }
-    ESP_LOGI("area_x", "%s", line);
-
-    ESP_LOGI("area_y", "horizontal-bar sweep across Y (thickness=%d, %d positions)", kBarThickness,
-             kSteps);
-    int y_curve[16] = {0};
-    for (int i = 0; i < kSteps; ++i) {
-        const int y = (int)(((long)i * (s_fb.height - kBarThickness)) / (kSteps - 1));
-        app_fb_fill(&s_fb, 0);
-        crt_fb_fill_rect(&s_fb, 0, (uint16_t)y, s_fb.width, kBarThickness, 255);
-        vTaskDelay(pdMS_TO_TICKS(kSettleMs));
-        long sum = 0;
-        for (int s = 0; s < kSampleN; ++s) {
-            int v;
-            adc_oneshot_read(s_ir_adc, APP_IR_ADC_CHANNEL, &v);
-            sum += v;
-            esp_rom_delay_us(200);
-        }
-        y_curve[i] = (int)(sum / kSampleN);
-    }
-    n = snprintf(line, sizeof(line), "ADC@y:");
-    for (int i = 0; i < kSteps; ++i) {
-        n += snprintf(line + n, sizeof(line) - n, " %4d", y_curve[i]);
-    }
-    ESP_LOGI("area_y", "%s", line);
-
-    /* Pick peaks for quick interpretation */
-    int x_peak_idx = 0, y_peak_idx = 0;
-    for (int i = 1; i < kSteps; ++i) {
-        if (x_curve[i] > x_curve[x_peak_idx])
-            x_peak_idx = i;
-        if (y_curve[i] > y_curve[y_peak_idx])
-            y_peak_idx = i;
-    }
-    const int x_peak_px = (int)(((long)x_peak_idx * (s_fb.width - kBarThickness)) / (kSteps - 1));
-    const int y_peak_px = (int)(((long)y_peak_idx * (s_fb.height - kBarThickness)) / (kSteps - 1));
-    ESP_LOGI("area", "peak X=%d (px≈%d / %d) | Y=%d (px≈%d / %d)", x_peak_idx, x_peak_px,
-             s_fb.width, y_peak_idx, y_peak_px, s_fb.height);
-
-    app_ir_ring_set(false);
-}
-
-/* Gray-level PRBS: a single central disk modulated between 4 amplitude
- * levels (0, 64, 128, 192). Each tick consumes 2 LFSR bits → 2 bits of
- * input information without saturating the ring's photo-coupling. The
- * non-linear pixel → phosphor → IR LED → ADC chain provides the kernel
- * needed for reservoir computing beyond a pure linear filter. */
-static void app_ir_prbs_capture(void)
-{
-    const int kTicks = 2048;   /* PRC-grade dataset; 8× the old 256 fixes overfit */
-    const int kSettleMs = 150; /* < τ_sensor ≈ 440 ms → exposes fading memory */
-    /* Heavy oversampling: 64 ADC reads averaged → ~8x noise SNR improvement
-     * via 1/√N over the previous N=8. Adds ~13 ms per tick (within settle). */
-    const int kSampleN = 64;
-    /* 4 grayscale levels — well below saturation (max 192 / 255). Empirical:
-     * with the ring on glass, level 192 gives ADC ~2400, level 64 gives
-     * ~1500, level 0 gives ~80, so the dynamic range is preserved. */
-    static const uint8_t kLevels[4] = {0, 16, 32, 48};
-    uint32_t lfsr = 0xACE1u;
-
-    /* Probe is intentionally TINY (~12 px elliptical) to keep the ring out
-     * of saturation: a full-disk pixel illumination overdrives the LEDs
-     * regardless of grayscale level. Small probe + 4 levels gives ADC
-     * dynamic range across all levels. */
-    const int cx = APP_RING_CENTER_X;
-    const int cy = APP_RING_CENTER_Y;
-    const int rx = 6;
-    const int ry = 6;
-
-    gpio_set_direction(APP_IR_PIN, GPIO_MODE_INPUT);
-    gpio_set_pull_mode(APP_IR_PIN, GPIO_PULLDOWN_ONLY);
-    esp_rom_delay_us(500);
-
-    static uint8_t lvl_seq[2048] = {0};
-    static int adc_seq[2048] = {0};
-    for (int t = 0; t < kTicks; ++t) {
-        /* Consume 2 LFSR bits to choose 1 of 4 levels. */
-        const uint8_t lvl_idx = (uint8_t)(lfsr & 0x3U);
-        for (int b = 0; b < 2; ++b) {
-            const uint32_t out = lfsr & 1U;
-            lfsr = (lfsr >> 1) ^ (uint32_t)((-(int32_t)(out)) & 0xA3000000u);
-        }
-        lvl_seq[t] = lvl_idx;
-
-        app_fb_fill(&s_fb, 0);
-        if (kLevels[lvl_idx] > 0) {
-            app_fb_fill_ellipse(&s_fb, cx, cy, rx, ry, kLevels[lvl_idx]);
-        }
-        vTaskDelay(pdMS_TO_TICKS(kSettleMs));
-        long sum = 0;
-        for (int s = 0; s < kSampleN; ++s) {
-            int v;
-            adc_oneshot_read(s_ir_adc, APP_IR_ADC_CHANNEL, &v);
-            sum += v;
-            esp_rom_delay_us(200);
-        }
-        adc_seq[t] = (int)(sum / kSampleN);
-    }
-
-    ESP_LOGI("gprbs", "ticks=%d levels=4 set=[%d,%d,%d,%d]", kTicks, kLevels[0], kLevels[1],
-             kLevels[2], kLevels[3]);
-    char line[160];
-    for (int base = 0; base < kTicks; base += 16) {
-        int n = snprintf(line, sizeof(line), "i=%3d", base);
-        for (int i = 0; i < 16 && (base + i) < kTicks; ++i) {
-            n += snprintf(line + n, sizeof(line) - n, " %1u", lvl_seq[base + i]);
-        }
-        ESP_LOGI("gprbs_l", "%s", line);
-        n = snprintf(line, sizeof(line), "i=%3d", base);
-        for (int i = 0; i < 16 && (base + i) < kTicks; ++i) {
-            n += snprintf(line + n, sizeof(line) - n, " %4d", adc_seq[base + i]);
-        }
-        ESP_LOGI("gprbs_a", "%s", line);
-    }
-    app_ir_ring_set(false);
-}
-
-/* Phosphor impulse-response capture.
- *
- * 1. Pad held in INPUT + pulldown so ADC1_CH4 is the only path.
- * 2. Tela: white disk of (rx, ry) at center → steady-state for `pre_ms`.
- * 3. Burst ADC sampling at 10 kHz: first quarter under WHITE, then we
- *    flip the FB to all-black and continue sampling — captures the
- *    optical decay through the ring + phosphor.
- * 4. CSV-style log on UART: one ESP_LOGI per pre/post phase, one per N
- *    samples to keep the queue happy. */
-static void app_ir_decay_test(int trial_idx)
-{
-    /* Sampling: 5 ms/sample × 1024 samples = 5.12 s total burst window.
-     * Pre-phase ≥ 1.28 s (≥ τ_phosphor) so steady-state amplitude is reliable.
-     * Post-phase ≥ 3.84 s lets biexp/KWW fits resolve the slow tail. */
-    const int kSamples = 1024;
-    const uint32_t kPeriodUs = 5000;    /* 5 ms/sample */
-    const int kSwitchAt = kSamples / 4; /* 1.28 s WHITE, 3.84 s DECAY */
-    static int buf[1024];
-
-    const float radius_mm = APP_RING_OD_MM * 0.5f;
-    const int cx = APP_RING_CENTER_X;
-    const int cy = APP_RING_CENTER_Y;
-    const int rx = (int)(radius_mm * (float)s_fb.width / APP_CRT_VISIBLE_W_MM + 0.5f);
-    const int ry = (int)(radius_mm * (float)s_fb.height / APP_CRT_VISIBLE_H_MM + 0.5f);
-
-    /* Phase 1: white disk steady-state. Hold ≥ 3·τ_phosphor (~1.2 s × 3 ≈
-     * 3.6 s, rounded down to 2 s here + 1.28 s of pre-switch burst → ≥ 96%
-     * of asymptotic amplitude before the impulse off). */
-    app_fb_fill(&s_fb, 0);
-    app_fb_fill_ellipse(&s_fb, cx, cy, rx, ry, 255);
-    vTaskDelay(pdMS_TO_TICKS(2000));
-
-    /* Pad in INPUT + pulldown for ADC reads (no drain inside the loop) */
-    gpio_set_direction(APP_IR_PIN, GPIO_MODE_INPUT);
-    gpio_set_pull_mode(APP_IR_PIN, GPIO_PULLDOWN_ONLY);
-    esp_rom_delay_us(500);
-
-    /* Burst capture; flip FB to black BEFORE the switch sample so the first
-     * DECAY sample is purely post-impulse (avoids the off-by-one that
-     * inflated A and pulled τ longer in earlier runs). */
-    for (int i = 0; i < kSamples; ++i) {
-        if (i == kSwitchAt) {
-            app_fb_fill(&s_fb, 0); /* impulse OFF before sample read */
-            esp_rom_delay_us(50);  /* let DAC + phosphor leading edge settle */
-        }
-        adc_oneshot_read(s_ir_adc, APP_IR_ADC_CHANNEL, &buf[i]);
-        esp_rom_delay_us(kPeriodUs);
-        if ((i & 0x0F) == 0x0F) {
-            vTaskDelay(1);
-        }
-    }
-
-    /* Restore ring as the OUTPUT driver */
-    app_ir_ring_set(false);
-
-    /* Stats */
-    int pre_min = 4095, pre_max = 0;
-    long pre_sum = 0;
-    for (int i = 0; i < kSwitchAt; ++i) {
-        if (buf[i] < pre_min)
-            pre_min = buf[i];
-        if (buf[i] > pre_max)
-            pre_max = buf[i];
-        pre_sum += buf[i];
-    }
-    int post_min = 4095, post_max = 0;
-    long post_sum = 0;
-    for (int i = kSwitchAt; i < kSamples; ++i) {
-        if (buf[i] < post_min)
-            post_min = buf[i];
-        if (buf[i] > post_max)
-            post_max = buf[i];
-        post_sum += buf[i];
-    }
-    ESP_LOGI("decay", "trial=%d period_us=%u switch_idx=%d N=%d", trial_idx, (unsigned)kPeriodUs,
-             kSwitchAt, kSamples);
-    ESP_LOGI("decay", "pre  (white): min=%4d max=%4d mean=%4ld", pre_min, pre_max,
-             pre_sum / kSwitchAt);
-    ESP_LOGI("decay", "post (decay): min=%4d max=%4d mean=%4ld", post_min, post_max,
-             post_sum / (kSamples - kSwitchAt));
-
-    /* Dump samples in chunks of 16 as CSV-ish lines for offline plotting.
-     * Each line: "decay_csv idx0 v0 v1 ... v15". */
-    char line[160];
-    for (int base = 0; base < kSamples; base += 16) {
-        int n = snprintf(line, sizeof(line), "i=%3d", base);
-        for (int i = 0; i < 16 && (base + i) < kSamples; ++i) {
-            n += snprintf(line + n, sizeof(line) - n, " %4d", buf[base + i]);
-        }
-        ESP_LOGI("decay_csv", "%s", line);
-    }
-}
-
-static esp_err_t app_ir_ring_init(void)
-{
-    adc_oneshot_unit_init_cfg_t unit_cfg = {
-        .unit_id = APP_IR_ADC_UNIT,
-        .ulp_mode = ADC_ULP_MODE_DISABLE,
-    };
-    esp_err_t err = adc_oneshot_new_unit(&unit_cfg, &s_ir_adc);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "adc_oneshot_new_unit: %s", esp_err_to_name(err));
-        return err;
-    }
-    adc_oneshot_chan_cfg_t chan_cfg = {
-        .bitwidth = ADC_BITWIDTH_12,
-        .atten = ADC_ATTEN_DB_12,
-    };
-    err = adc_oneshot_config_channel(s_ir_adc, APP_IR_ADC_CHANNEL, &chan_cfg);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "adc_oneshot_config_channel: %s", esp_err_to_name(err));
-        return err;
-    }
-    app_ir_ring_set(false);
-    return ESP_OK;
-}
-
-static void app_ir_ring_task(void *arg)
-{
-    (void)arg;
-    app_ir_ring_calibrate();
-    ESP_LOGI(TAG, "PRC: starting area sweep...");
-    app_ir_area_sweep();
-    ESP_LOGI(TAG, "PRC: starting 16x16 XY map...");
-    app_ir_xy_map();
-    ESP_LOGI(TAG, "PRC: starting decay tests (3 trials)...");
-    for (int t = 0; t < 3; ++t) {
-        app_ir_decay_test(t);
-        vTaskDelay(pdMS_TO_TICKS(200));
-    }
-    ESP_LOGI(TAG, "PRC: starting PRBS capture (64 bits)...");
-    app_ir_prbs_capture();
-    ESP_LOGI(TAG, "PRC: done — entering monitoring mode");
-    app_draw_ring_indicator(&s_fb);
-
-    /* MONITOR mode: ring stays OFF, the pad floats with internal pulldown
-     * during sense so any external IR/photo source can pull it HIGH.
-     * This is the closest analog to the validated devkit-v1 firmware. */
-    s_ir_mode = APP_IR_MODE_MONITOR;
-    bool stable_light = false;
-    while (true) {
-        const int v = app_ir_ring_measure();
-        const int delta = s_ir_polarity * (v - s_ir_baseline);
-
-        if (!stable_light && delta > s_ir_threshold + s_ir_hysteresis) {
-            stable_light = true;
-        } else if (stable_light && delta < s_ir_threshold - s_ir_hysteresis) {
-            stable_light = false;
-        }
-
-        switch (s_ir_mode) {
-        case APP_IR_MODE_AUTO:
-            app_ir_ring_set(!stable_light);
-            break;
-        case APP_IR_MODE_FORCE_ON:
-            app_ir_ring_set(true);
-            break;
-        case APP_IR_MODE_FORCE_OFF:
-        case APP_IR_MODE_MONITOR:
-            app_ir_ring_set(false);
-            break;
-        }
-
-        ESP_LOGI("ir_ring", "ADC=%4d d=%+5d %s ring=%s", v, delta,
-                 stable_light ? "[LIGHT]" : "[DARK]", s_ir_ring_on ? "ON " : "OFF");
-
-        vTaskDelay(pdMS_TO_TICKS(APP_IR_SAMPLE_MS));
+    crt_demo_pattern_fill_rgb332_calibration_card(s_fb.buffer, s_fb.width, s_fb.height, s_fb.width);
+    app_draw_calibration_labels(&s_fb, &s_app_standard_info);
+    if (diag != NULL) {
+        app_draw_calibration_runtime_hud(&s_fb, diag);
     }
 }
 
@@ -1068,6 +449,10 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
         ESP_LOGE(TAG, "crt_timing_get_standard_info failed: %s", esp_err_to_name(timing_err));
         return timing_err;
     }
+    s_app_timing = timing;
+    s_app_standard_info = standard_info;
+    s_app_metadata_valid = true;
+    s_last_diag_underruns = 0;
 
     esp_err_t err = crt_core_init(&config);
     if (err != ESP_OK) {
@@ -1083,9 +468,7 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
         if (k_use_rgb332_framebuffer) {
             app_fill_rgb332_test_card(&s_fb);
         } else if (k_use_calibration_card) {
-            crt_demo_pattern_fill_rgb332_calibration_card(s_fb.buffer, s_fb.width, s_fb.height,
-                                                          s_fb.width);
-            app_draw_calibration_labels(&s_fb, &standard_info);
+            app_draw_calibration_card_with_hud(NULL);
         } else if (k_use_stimulus) {
             crt_fb_palette_init_grayscale(&s_fb, APP_BLANK_LEVEL, APP_WHITE_LEVEL);
         } else {
@@ -1123,16 +506,23 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
             return stimulus_err;
         }
 
-        /* Draw the IR ring placement indicator into the indexed-8 surface
-         * once. validated crt_fb_scanline_hook handles the hot path
-         * (palette + I2S swap) with zero per-scanline cost. */
-        app_draw_ring_indicator(&s_fb);
+        stimulus_err = crt_compose_init(&s_stimulus_compose);
+        if (stimulus_err == ESP_OK) {
+            stimulus_err =
+                crt_compose_set_palette(&s_stimulus_compose, s_fb.palette, s_fb.palette_size);
+        }
+        if (stimulus_err == ESP_OK) {
+            stimulus_err = crt_compose_add_layer(&s_stimulus_compose, crt_stimulus_layer_fetch,
+                                                 &s_stimulus, CRT_COMPOSE_NO_TRANSPARENCY);
+        }
+        if (stimulus_err != ESP_OK) {
+            ESP_LOGE(TAG, "stimulus compose setup failed: %s", esp_err_to_name(stimulus_err));
+            return stimulus_err;
+        }
 
-        crt_register_scanline_hook(crt_fb_scanline_hook, &s_fb);
-        ESP_LOGI(TAG, "render: PRC ring placement indicator (%ux%u, OD %.0f mm, %d LEDs)",
-                 APP_FB_WIDTH, APP_FB_HEIGHT, (double)APP_RING_OD_MM, APP_RING_LED_COUNT);
-        ESP_LOGI(TAG,
-                 "PRC tip  : press the IR ring onto the markers, center crosshair = ring axis");
+        crt_register_scanline_hook(crt_compose_scanline_hook, &s_stimulus_compose);
+        ESP_LOGI(TAG, "render: measurement stimulus checker (%ux%u, cell=%ux%u)", APP_FB_WIDTH,
+                 APP_FB_HEIGHT, stimulus_config.cell_w, stimulus_config.cell_h);
     } else {
         /* ── Tile layer as fused base + keyed overlay on top ──────────── */
 
@@ -1220,13 +610,7 @@ static esp_err_t app_start_core(crt_video_standard_t video_standard)
     ESP_LOGI(TAG,
              "ESP32 CRT signal core started: standard=%s color=%s pattern=%s sample=%" PRIu32
              " subcarrier=%" PRIu32 " chroma=%s status=%s",
-             standard_info.name, config.enable_color ? "on" : "off",
-             k_use_rgb332_framebuffer                                         ? "rgb332_fb"
-             : k_use_calibration_card                                         ? "calibration"
-             : k_use_rgb332_compose                                           ? "rgb332_compose"
-             : k_use_stimulus                                                 ? "stimulus"
-             : (config.demo_pattern_mode == CRT_DEMO_PATTERN_COLOR_BARS_RAMP) ? "color_bars_ramp"
-                                                                              : "luma_bars",
+             standard_info.name, config.enable_color ? "on" : "off", app_render_mode_name(),
              timing.sample_rate_hz, standard_info.color_subcarrier_hz,
              standard_info.chroma_phase_alternates ? "alternate" : "fixed",
              standard_info.experimental ? "experimental" : "validated");
@@ -1238,8 +622,34 @@ static void app_log_diag_snapshot(void)
 {
     crt_diag_snapshot_t diag;
     crt_core_get_diag_snapshot(&diag);
-    ESP_LOGI(TAG, "diag: underruns=%" PRIu32 " queue_min=%" PRIu32 " prep_max=%" PRIu32 " cycles",
-             diag.dma_underrun_count, diag.ready_queue_min_depth, diag.prep_cycles_max);
+    app_draw_calibration_card_with_hud(&diag);
+
+    const uint32_t underrun_delta = diag.dma_underrun_count - s_last_diag_underruns;
+    s_last_diag_underruns = diag.dma_underrun_count;
+    const uint32_t uptime_s = (uint32_t)(esp_timer_get_time() / 1000000LL);
+
+    if (s_app_metadata_valid) {
+        ESP_LOGI(TAG,
+                 "runtime_meta: t=%" PRIu32 "s standard=%s render=%s active=%u total=%u "
+                 "field=%u.%03uHz sample=%" PRIu32 " subcarrier=%" PRIu32
+                 " chroma=%s status=%s underruns=%" PRIu32 " delta=%" PRIu32 " queue_min=%" PRIu32
+                 " prep_max=%" PRIu32 " cycles",
+                 uptime_s, s_app_standard_info.name, app_render_mode_name(),
+                 (unsigned)s_app_timing.active_lines, (unsigned)s_app_timing.total_lines,
+                 (unsigned)(s_app_standard_info.field_rate_millihz / 1000U),
+                 (unsigned)(s_app_standard_info.field_rate_millihz % 1000U),
+                 s_app_timing.sample_rate_hz, s_app_standard_info.color_subcarrier_hz,
+                 s_app_standard_info.chroma_phase_alternates ? "alternate" : "fixed",
+                 s_app_standard_info.experimental ? "experimental" : "validated",
+                 diag.dma_underrun_count, underrun_delta, diag.ready_queue_min_depth,
+                 diag.prep_cycles_max);
+    } else {
+        ESP_LOGI(TAG,
+                 "runtime_meta: t=%" PRIu32 "s underruns=%" PRIu32 " delta=%" PRIu32
+                 " queue_min=%" PRIu32 " prep_max=%" PRIu32 " cycles",
+                 uptime_s, diag.dma_underrun_count, underrun_delta, diag.ready_queue_min_depth,
+                 diag.prep_cycles_max);
+    }
     if (app_uses_compose_demo()) {
         const uint32_t sprite_overflow = crt_ppu_get_sprite_overflow_count(&s_ppu);
         const uint8_t sprite_peak = crt_ppu_get_sprite_max_line_rendered(&s_ppu);
@@ -1274,7 +684,7 @@ static void app_run_diag_loop(void)
         uart_upload_check(&s_fb);
         vTaskDelay(pdMS_TO_TICKS(10));
 #else
-        vTaskDelay(pdMS_TO_TICKS(5000));
+        vTaskDelay(pdMS_TO_TICKS(APP_DIAG_INTERVAL_MS));
 #endif
 
         static uint32_t ticks_since_diag;
@@ -1282,9 +692,9 @@ static void app_run_diag_loop(void)
 #if CONFIG_CRT_ENABLE_UART_UPLOAD
             10U;
 #else
-            5000U;
+            APP_DIAG_INTERVAL_MS;
 #endif
-        if (ticks_since_diag >= 5000U) {
+        if (ticks_since_diag >= APP_DIAG_INTERVAL_MS) {
             ticks_since_diag = 0;
             app_log_diag_snapshot();
         }
@@ -1302,6 +712,7 @@ static void app_cleanup_core(void)
     crt_register_scanline_hook(NULL, NULL);
     crt_register_frame_hook(NULL, NULL);
     crt_compose_clear_layers(&s_ppu.compose);
+    crt_compose_clear_layers(&s_stimulus_compose);
     crt_fb_surface_deinit(&s_fb);
 }
 
@@ -1356,19 +767,6 @@ void app_main(void)
 
     if (app_start_core(video_standard) != ESP_OK) {
         return;
-    }
-
-    /* Spawn the single-pin IR ring driver/sensor on Core 0 so it never
-     * competes with the prep_task on Core 1. Failure is non-fatal — the
-     * composite signal continues regardless. */
-    if (app_ir_ring_init() == ESP_OK) {
-        BaseType_t ok = xTaskCreatePinnedToCore(app_ir_ring_task, "ir_ring", 4096, NULL,
-                                                tskIDLE_PRIORITY + 2, NULL, 0);
-        if (ok != pdPASS) {
-            ESP_LOGW(TAG, "ir_ring task spawn failed");
-        }
-    } else {
-        ESP_LOGW(TAG, "ir_ring init failed — IR sensor disabled");
     }
 
 #if CONFIG_CRT_TEST_STANDARD_TOGGLE

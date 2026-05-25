@@ -95,7 +95,7 @@ validate_monitor() {
     grep -aFq "status=${EXPECT_STATUS}" <<<"$boot_line" ||
         fail "startup status mismatch: ${boot_line}"
 
-    mapfile -t diag_lines < <(grep -a 'diag: underruns=' "$MONITOR_LOG" || true)
+    mapfile -t diag_lines < <(grep -a 'runtime_meta: .*underruns=' "$MONITOR_LOG" || true)
     ((${#diag_lines[@]} >= MIN_DIAG_LINES)) ||
         fail "expected at least ${MIN_DIAG_LINES} diag lines, got ${#diag_lines[@]}"
 
