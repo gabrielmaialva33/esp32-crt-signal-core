@@ -322,6 +322,10 @@ bash -c '. ~/esp/esp-idf/export.sh && idf.py -p /dev/ttyACM0 flash monitor'
 
 # PAL-M calibration card smoke on real hardware
 make hw-calibration-pal-m HW_PORT=/dev/ttyACM0
+
+# PAL-M compose smoke/stress on real hardware
+make hw-compose-pal-m-smoke HW_PORT=/dev/ttyACM0
+make hw-compose-pal-m-stress HW_PORT=/dev/ttyACM0
 ```
 
 ### Runtime Options

@@ -8,7 +8,7 @@ HW_SOAK_SECONDS ?= 90
 
 # ── Build ────────────────────────────────────────────────────────────
 
-.PHONY: build flash monitor clean menuconfig fullclean build-render-modes hw-compose-smoke hw-compose-stress hw-compose-pal-stress hw-compose-pal-m-stress hw-compose-pal-n-stress hw-compose-soak hw-calibration-pal-m
+.PHONY: build flash monitor clean menuconfig fullclean build-render-modes hw-compose-smoke hw-compose-stress hw-compose-pal-stress hw-compose-pal-m-smoke hw-compose-pal-m-stress hw-compose-pal-n-stress hw-compose-soak hw-calibration-pal-m
 
 build:
 	idf.py build
@@ -43,6 +43,15 @@ hw-compose-pal-stress:  ## Build, flash, and validate PAL worst-case COMPOSE dia
 		MONITOR_LOG="/tmp/esp32-crt-compose-pal-stress-monitor.log" \
 		MONITOR_SECONDS=55 MIN_WINDOWS=8 \
 		EXPECT_ACTIVE_SPRITES=8 EXPECT_SPRITE_PEAK=8 EXPECT_PPU_PENDING=8 \
+		PORT="$(HW_PORT)" tools/hw/compose_smoke.sh
+
+hw-compose-pal-m-smoke:  ## Build, flash, and validate PAL-M COMPOSE diagnostics on ESP32 hardware
+	@RUN_NAME="compose_pal_m_smoke" VIDEO_STANDARD="PAL_M" \
+		BUILD_DIR="build/compose-pal-m-smoke" \
+		SDKCONFIG_TMP="/tmp/esp32-crt-compose-pal-m-smoke-sdkconfig" \
+		MONITOR_LOG="/tmp/esp32-crt-compose-pal-m-smoke-monitor.log" \
+		MONITOR_SECONDS=25 MIN_WINDOWS=8 \
+		EXPECT_ACTIVE_SPRITES=3 EXPECT_PPU_PENDING=3 \
 		PORT="$(HW_PORT)" tools/hw/compose_smoke.sh
 
 hw-compose-pal-m-stress:  ## Build, flash, and validate PAL-M worst-case COMPOSE diagnostics on ESP32 hardware
