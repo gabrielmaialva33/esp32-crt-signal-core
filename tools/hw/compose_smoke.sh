@@ -17,6 +17,16 @@ EXPECT_SPRITE_PEAK="${EXPECT_SPRITE_PEAK:-}"
 EXPECT_PPU_PENDING="${EXPECT_PPU_PENDING:-}"
 IDF_EXPORT="${IDF_EXPORT:-$HOME/esp/esp-idf/export.sh}"
 
+if [[ "$COMPOSE_STRESS" == "1" ]]; then
+    DEFAULT_MAX_PREP=22000
+    DEFAULT_MIN_HEADROOM=-45
+else
+    DEFAULT_MAX_PREP=17000
+    DEFAULT_MIN_HEADROOM=-10
+fi
+CRT_HW_MAX_PREP="${CRT_HW_MAX_PREP:-$DEFAULT_MAX_PREP}"
+CRT_HW_MIN_HEADROOM="${CRT_HW_MIN_HEADROOM:-$DEFAULT_MIN_HEADROOM}"
+
 fail() {
     printf '%s: FAIL: %s\n' "$RUN_NAME" "$*" >&2
     printf '%s: monitor log: %s\n' "$RUN_NAME" "$MONITOR_LOG" >&2
@@ -33,6 +43,13 @@ extract_i32() {
     local key="$1"
     local line="$2"
     sed -n "s/.*${key}=\(-\{0,1\}[0-9][0-9]*\).*/\1/p" <<<"$line"
+}
+
+validate_gate_config() {
+    [[ "$CRT_HW_MAX_PREP" =~ ^[0-9]+$ ]] ||
+        fail "CRT_HW_MAX_PREP=${CRT_HW_MAX_PREP} is not an unsigned integer"
+    [[ "$CRT_HW_MIN_HEADROOM" =~ ^-?[0-9]+$ ]] ||
+        fail "CRT_HW_MIN_HEADROOM=${CRT_HW_MIN_HEADROOM} is not a signed integer"
 }
 
 run_idf() {
@@ -206,8 +223,14 @@ summarize_runtime_meta() {
     printf '%s: prep steady_windows=%u prep_min=%u prep_avg=%u prep_max=%u headroom_min=%d headroom_avg=%d headroom_max=%d\n' \
         "$RUN_NAME" "$steady_windows" "$prep_min" "$((prep_sum / steady_windows))" "$prep_max" \
         "$headroom_min" "$((headroom_sum / steady_windows))" "$headroom_max"
+
+    ((prep_max <= CRT_HW_MAX_PREP)) ||
+        fail "prep_max=${prep_max} exceeds CRT_HW_MAX_PREP=${CRT_HW_MAX_PREP}"
+    ((headroom_min >= CRT_HW_MIN_HEADROOM)) ||
+        fail "headroom_min=${headroom_min} is below CRT_HW_MIN_HEADROOM=${CRT_HW_MIN_HEADROOM}"
 }
 
+validate_gate_config
 prepare_sdkconfig
 run_idf -B "$BUILD_DIR" -DSDKCONFIG="$SDKCONFIG_TMP" -p "$PORT" build flash
 capture_monitor
