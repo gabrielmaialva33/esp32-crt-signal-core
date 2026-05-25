@@ -375,10 +375,118 @@ tile_write_expanded_palette_pair(uint16_t *active_buf, uint16_t logical_x, uint1
     active_buf[base + 5u] = l1;
 }
 
+IRAM_ATTR static inline void tile_write_expanded_palette_full_tile_plain(uint16_t *active_buf,
+                                                                         uint16_t x,
+                                                                         const uint8_t *tile_line,
+                                                                         const uint16_t *pal)
+{
+    if ((x & 1u) != 0u) {
+        tile_patch_expanded_palette_sample(active_buf, x, pal[tile_line[0]]);
+        tile_write_expanded_palette_pair(active_buf, (uint16_t)(x + 1u), pal[tile_line[1]],
+                                         pal[tile_line[2]]);
+        tile_write_expanded_palette_pair(active_buf, (uint16_t)(x + 3u), pal[tile_line[3]],
+                                         pal[tile_line[4]]);
+        tile_write_expanded_palette_pair(active_buf, (uint16_t)(x + 5u), pal[tile_line[5]],
+                                         pal[tile_line[6]]);
+        tile_patch_expanded_palette_sample(active_buf, (uint16_t)(x + 7u), pal[tile_line[7]]);
+        return;
+    }
+    tile_write_expanded_palette_pair(active_buf, x, pal[tile_line[0]], pal[tile_line[1]]);
+    tile_write_expanded_palette_pair(active_buf, (uint16_t)(x + 2u), pal[tile_line[2]],
+                                     pal[tile_line[3]]);
+    tile_write_expanded_palette_pair(active_buf, (uint16_t)(x + 4u), pal[tile_line[4]],
+                                     pal[tile_line[5]]);
+    tile_write_expanded_palette_pair(active_buf, (uint16_t)(x + 6u), pal[tile_line[6]],
+                                     pal[tile_line[7]]);
+}
+
+IRAM_ATTR static inline void tile_write_expanded_palette_full_tile_bank(uint16_t *active_buf,
+                                                                        uint16_t x,
+                                                                        const uint8_t *tile_line,
+                                                                        const uint8_t *bank,
+                                                                        const uint16_t *pal)
+{
+    if ((x & 1u) != 0u) {
+        tile_patch_expanded_palette_sample(active_buf, x, pal[bank[tile_line[0]]]);
+        tile_write_expanded_palette_pair(active_buf, (uint16_t)(x + 1u), pal[bank[tile_line[1]]],
+                                         pal[bank[tile_line[2]]]);
+        tile_write_expanded_palette_pair(active_buf, (uint16_t)(x + 3u), pal[bank[tile_line[3]]],
+                                         pal[bank[tile_line[4]]]);
+        tile_write_expanded_palette_pair(active_buf, (uint16_t)(x + 5u), pal[bank[tile_line[5]]],
+                                         pal[bank[tile_line[6]]]);
+        tile_patch_expanded_palette_sample(active_buf, (uint16_t)(x + 7u), pal[bank[tile_line[7]]]);
+        return;
+    }
+    tile_write_expanded_palette_pair(active_buf, x, pal[bank[tile_line[0]]],
+                                     pal[bank[tile_line[1]]]);
+    tile_write_expanded_palette_pair(active_buf, (uint16_t)(x + 2u), pal[bank[tile_line[2]]],
+                                     pal[bank[tile_line[3]]]);
+    tile_write_expanded_palette_pair(active_buf, (uint16_t)(x + 4u), pal[bank[tile_line[4]]],
+                                     pal[bank[tile_line[5]]]);
+    tile_write_expanded_palette_pair(active_buf, (uint16_t)(x + 6u), pal[bank[tile_line[6]]],
+                                     pal[bank[tile_line[7]]]);
+}
+
+IRAM_ATTR static inline void tile_write_expanded_palette_full_tile_hflip(uint16_t *active_buf,
+                                                                         uint16_t x,
+                                                                         const uint8_t *tile_line,
+                                                                         const uint16_t *pal)
+{
+    if ((x & 1u) != 0u) {
+        tile_patch_expanded_palette_sample(active_buf, x, pal[tile_line[7]]);
+        tile_write_expanded_palette_pair(active_buf, (uint16_t)(x + 1u), pal[tile_line[6]],
+                                         pal[tile_line[5]]);
+        tile_write_expanded_palette_pair(active_buf, (uint16_t)(x + 3u), pal[tile_line[4]],
+                                         pal[tile_line[3]]);
+        tile_write_expanded_palette_pair(active_buf, (uint16_t)(x + 5u), pal[tile_line[2]],
+                                         pal[tile_line[1]]);
+        tile_patch_expanded_palette_sample(active_buf, (uint16_t)(x + 7u), pal[tile_line[0]]);
+        return;
+    }
+    tile_write_expanded_palette_pair(active_buf, x, pal[tile_line[7]], pal[tile_line[6]]);
+    tile_write_expanded_palette_pair(active_buf, (uint16_t)(x + 2u), pal[tile_line[5]],
+                                     pal[tile_line[4]]);
+    tile_write_expanded_palette_pair(active_buf, (uint16_t)(x + 4u), pal[tile_line[3]],
+                                     pal[tile_line[2]]);
+    tile_write_expanded_palette_pair(active_buf, (uint16_t)(x + 6u), pal[tile_line[1]],
+                                     pal[tile_line[0]]);
+}
+
+IRAM_ATTR static inline void
+tile_write_expanded_palette_full_tile_bank_hflip(uint16_t *active_buf, uint16_t x,
+                                                 const uint8_t *tile_line, const uint8_t *bank,
+                                                 const uint16_t *pal)
+{
+    if ((x & 1u) != 0u) {
+        tile_patch_expanded_palette_sample(active_buf, x, pal[bank[tile_line[7]]]);
+        tile_write_expanded_palette_pair(active_buf, (uint16_t)(x + 1u), pal[bank[tile_line[6]]],
+                                         pal[bank[tile_line[5]]]);
+        tile_write_expanded_palette_pair(active_buf, (uint16_t)(x + 3u), pal[bank[tile_line[4]]],
+                                         pal[bank[tile_line[3]]]);
+        tile_write_expanded_palette_pair(active_buf, (uint16_t)(x + 5u), pal[bank[tile_line[2]]],
+                                         pal[bank[tile_line[1]]]);
+        tile_patch_expanded_palette_sample(active_buf, (uint16_t)(x + 7u), pal[bank[tile_line[0]]]);
+        return;
+    }
+    tile_write_expanded_palette_pair(active_buf, x, pal[bank[tile_line[7]]],
+                                     pal[bank[tile_line[6]]]);
+    tile_write_expanded_palette_pair(active_buf, (uint16_t)(x + 2u), pal[bank[tile_line[5]]],
+                                     pal[bank[tile_line[4]]]);
+    tile_write_expanded_palette_pair(active_buf, (uint16_t)(x + 4u), pal[bank[tile_line[3]]],
+                                     pal[bank[tile_line[2]]]);
+    tile_write_expanded_palette_pair(active_buf, (uint16_t)(x + 6u), pal[bank[tile_line[1]]],
+                                     pal[bank[tile_line[0]]]);
+}
+
 IRAM_ATTR static inline void
 tile_write_expanded_palette_plain_span(uint16_t *active_buf, uint16_t x, const uint8_t *tile_line,
                                        uint16_t fine, uint16_t take, const uint16_t *pal)
 {
+    if (fine == 0u && take == CRT_TILE_PX_W) {
+        tile_write_expanded_palette_full_tile_plain(active_buf, x, tile_line, pal);
+        return;
+    }
+
     uint16_t i = 0;
     if ((x & 1u) != 0u && i < take) {
         tile_patch_expanded_palette_sample(active_buf, x, pal[tile_line[fine]]);
@@ -399,6 +507,19 @@ IRAM_ATTR static void tile_write_expanded_palette_span(uint16_t *active_buf, uin
                                                        uint16_t take, const uint8_t *bank,
                                                        bool hflip, const uint16_t *pal)
 {
+    if (fine == 0u && take == CRT_TILE_PX_W) {
+        if (!hflip && bank == NULL) {
+            tile_write_expanded_palette_full_tile_plain(active_buf, x, tile_line, pal);
+        } else if (!hflip) {
+            tile_write_expanded_palette_full_tile_bank(active_buf, x, tile_line, bank, pal);
+        } else if (bank == NULL) {
+            tile_write_expanded_palette_full_tile_hflip(active_buf, x, tile_line, pal);
+        } else {
+            tile_write_expanded_palette_full_tile_bank_hflip(active_buf, x, tile_line, bank, pal);
+        }
+        return;
+    }
+
     uint16_t i = 0;
     if ((x & 1u) != 0u && i < take) {
         const uint16_t sample_x = (uint16_t)(fine + i);
