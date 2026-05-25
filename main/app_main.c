@@ -395,11 +395,29 @@ static inline void app_overlay_put(crt_fb_surface_t *fb, int x, int y, uint8_t i
 
 static void app_overlay_fill_rect(crt_fb_surface_t *fb, int x0, int y0, int w, int h, uint8_t idx)
 {
-    for (int dy = 0; dy < h; ++dy) {
-        for (int dx = 0; dx < w; ++dx) {
-            app_overlay_put(fb, x0 + dx, y0 + dy, idx);
-        }
+    if (fb == NULL || fb->buffer == NULL || w <= 0 || h <= 0) {
+        return;
     }
+
+    int x1 = x0 + w;
+    int y1 = y0 + h;
+    if (x0 < 0) {
+        x0 = 0;
+    }
+    if (y0 < 0) {
+        y0 = 0;
+    }
+    if (x1 > (int)fb->width) {
+        x1 = (int)fb->width;
+    }
+    if (y1 > (int)fb->height) {
+        y1 = (int)fb->height;
+    }
+    if (x0 >= x1 || y0 >= y1) {
+        return;
+    }
+
+    crt_fb_fill_rect(fb, (uint16_t)x0, (uint16_t)y0, (uint16_t)(x1 - x0), (uint16_t)(y1 - y0), idx);
 }
 
 /* Static guide telling the user exactly where to glue the IR ring on the
@@ -531,14 +549,10 @@ static int app_ir_capture_window(uint32_t window_ms, int *out_min, int *out_max)
     return (n > 0) ? (int)(sum / n) : 0;
 }
 
-/* Fills the entire indexed-8 framebuffer with a single palette index.
- * memset is fine because the surface is contiguous bytes at width pitch. */
+/* Fills the entire indexed-8 framebuffer with a single palette index. */
 static void app_fb_fill(crt_fb_surface_t *fb, uint8_t idx)
 {
-    if (fb == NULL || fb->buffer == NULL) {
-        return;
-    }
-    memset(fb->buffer, idx, fb->buffer_size);
+    crt_fb_clear(fb, idx);
 }
 
 /* Fills an axis-aligned ellipse at (cx, cy) with semi-axes (rx, ry) using
@@ -712,11 +726,7 @@ static void app_ir_area_sweep(void)
     for (int i = 0; i < kSteps; ++i) {
         const int x = (int)(((long)i * (s_fb.width - kBarThickness)) / (kSteps - 1));
         app_fb_fill(&s_fb, 0);
-        for (int by = 0; by < (int)s_fb.height; ++by) {
-            for (int bx = 0; bx < kBarThickness; ++bx) {
-                crt_fb_put(&s_fb, (uint16_t)(x + bx), (uint16_t)by, 255);
-            }
-        }
+        crt_fb_fill_rect(&s_fb, (uint16_t)x, 0, kBarThickness, s_fb.height, 255);
         vTaskDelay(pdMS_TO_TICKS(kSettleMs));
         long sum = 0;
         for (int s = 0; s < kSampleN; ++s) {
@@ -740,11 +750,7 @@ static void app_ir_area_sweep(void)
     for (int i = 0; i < kSteps; ++i) {
         const int y = (int)(((long)i * (s_fb.height - kBarThickness)) / (kSteps - 1));
         app_fb_fill(&s_fb, 0);
-        for (int by = 0; by < kBarThickness; ++by) {
-            for (int bx = 0; bx < (int)s_fb.width; ++bx) {
-                crt_fb_put(&s_fb, (uint16_t)bx, (uint16_t)(y + by), 255);
-            }
-        }
+        crt_fb_fill_rect(&s_fb, 0, (uint16_t)y, s_fb.width, kBarThickness, 255);
         vTaskDelay(pdMS_TO_TICKS(kSettleMs));
         long sum = 0;
         for (int s = 0; s < kSampleN; ++s) {
